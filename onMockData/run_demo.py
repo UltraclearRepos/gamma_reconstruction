@@ -6,11 +6,12 @@ from pathlib import Path
 
 import numpy as np
 
-from reconstruction import coarse_to_fine_grid_search
+from reconstruction import coarse_to_fine_grid_search, compute_score_map_xyz
 from simulation import generate_synthetic_dataset
 from visualization import (
     visualize_detector_geometry,
     visualize_detector_trajectory_world,
+    visualize_source_fit_3d,
 )
 
 
@@ -34,6 +35,8 @@ def print_summary(dataset, estimated_position, estimated_strength):
 
 def main():
     dataset = generate_synthetic_dataset(num_measurements=24, seed=7)
+    search_min = (-0.40, -0.50, -0.10)
+    search_max = (0.60, 0.30, 0.60)
 
     # Assumed model used during reconstruction.
     # It is intentionally a bit simpler than the model used for data generation.
@@ -49,8 +52,8 @@ def main():
         assumed_backgrounds=assumed_backgrounds,
         assumed_channel_scales=assumed_channel_scales,
         assumed_k=assumed_k,
-        search_min=(-0.40, -0.50, -0.10),
-        search_max=(0.60, 0.30, 0.60),
+        search_min=search_min,
+        search_max=search_max,
         grid_sizes=(13, 11, 9),
     )
 
@@ -65,7 +68,7 @@ def main():
             f"score={item['best_score']:.2f}"
         )
 
-    output_dir = Path("visualizations")
+    output_dir = Path("onMockData/visualizations")
     visualize_detector_geometry(
         dataset["geometry"],
         save_path=output_dir / "detector_geometry.png",
@@ -77,10 +80,37 @@ def main():
         show=False,
     )
 
+    xs, ys, zs, score_map, _strength_map = compute_score_map_xyz(
+        counts=dataset["counts"],
+        geometry=dataset["geometry"],
+        rotations=dataset["rotations"],
+        translations=dataset["translations"],
+        assumed_backgrounds=assumed_backgrounds,
+        assumed_channel_scales=assumed_channel_scales,
+        assumed_k=assumed_k,
+        search_min=search_min,
+        search_max=search_max,
+        grid_size=50,
+    )
+
+    visualize_source_fit_3d(
+        xs=xs,
+        ys=ys,
+        zs=zs,
+        score_map=score_map,
+        estimated_position=estimated_position,
+        true_source_position=dataset["true_source_position"],
+        detector_positions=dataset["translations"],
+        save_path=output_dir / "source_fit_3d.png",
+        max_points=200,
+        show=False,
+    )
+
     print()
     print("Saved plots:")
     print(" ", output_dir / "detector_geometry.png")
     print(" ", output_dir / "detector_trajectory_world.png")
+    print(" ", output_dir / "source_fit_3d.png")
 
 
 if __name__ == "__main__":

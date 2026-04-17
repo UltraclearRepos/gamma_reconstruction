@@ -73,6 +73,51 @@ def score_candidate_position(
     return score, estimated_strength
 
 
+def compute_score_map_xyz(
+    counts,
+    geometry,
+    rotations,
+    translations,
+    assumed_backgrounds,
+    assumed_channel_scales,
+    assumed_k,
+    search_min,
+    search_max,
+    grid_size=21,
+):
+    """
+    Evaluate reconstruction score on a full XYZ grid.
+
+    Lower score means the candidate position explains the measured counts better.
+    """
+    xs = np.linspace(search_min[0], search_max[0], grid_size)
+    ys = np.linspace(search_min[1], search_max[1], grid_size)
+    zs = np.linspace(search_min[2], search_max[2], grid_size)
+    score_map = np.zeros((grid_size, grid_size, grid_size), dtype=float)
+    strength_map = np.zeros((grid_size, grid_size, grid_size), dtype=float)
+
+    for y_index, y in enumerate(ys):
+        for x_index, x in enumerate(xs):
+            for z_index, z in enumerate(zs):
+                candidate = np.array([x, y, z], dtype=float)
+
+                score, strength = score_candidate_position(
+                    candidate_source_position=candidate,
+                    counts=counts,
+                    geometry=geometry,
+                    rotations=rotations,
+                    translations=translations,
+                    assumed_backgrounds=assumed_backgrounds,
+                    assumed_channel_scales=assumed_channel_scales,
+                    assumed_k=assumed_k,
+                )
+
+                score_map[y_index, x_index, z_index] = score
+                strength_map[y_index, x_index, z_index] = strength
+
+    return xs, ys, zs, score_map, strength_map
+
+
 def coarse_to_fine_grid_search(
     counts,
     geometry,

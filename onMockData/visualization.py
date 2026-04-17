@@ -158,3 +158,107 @@ def visualize_detector_trajectory_world(dataset, save_path=None, show=False):
     ax.legend()
 
     finalize_figure(fig, save_path=save_path, show=show)
+
+
+def visualize_source_fit_3d(
+    xs,
+    ys,
+    zs,
+    score_map,
+    estimated_position,
+    true_source_position=None,
+    detector_positions=None,
+    save_path=None,
+    show=False,
+    max_points=500,
+):
+    """
+    Show where the source could be in 3D.
+
+    score_map contains negative log-likelihood values, so lower is better.
+    To keep the plot readable, we draw only the best-scoring grid points.
+    """
+    import matplotlib.pyplot as plt
+
+    score_delta = score_map - np.min(score_map)
+    flat_score_delta = score_delta.ravel()
+    num_points = min(max_points, len(flat_score_delta))
+    best_flat_indices = np.argpartition(flat_score_delta, num_points - 1)[:num_points]
+    y_indices, x_indices, z_indices = np.unravel_index(best_flat_indices, score_map.shape)
+
+    point_scores = np.log1p(flat_score_delta[best_flat_indices])
+    point_sizes = 8.0 + 20.0 * (1.0 - point_scores / max(np.max(point_scores), EPS))
+
+    fig = plt.figure(figsize=(8, 7))
+    ax = fig.add_subplot(111, projection="3d")
+
+    scatter = ax.scatter(
+        xs[x_indices],
+        ys[y_indices],
+        zs[z_indices],
+        c=point_scores,
+        s=point_sizes,
+        cmap="viridis_r",
+        alpha=0.25,
+        depthshade=False,
+    )
+
+    colorbar = fig.colorbar(scatter, ax=ax, shrink=0.75)
+    colorbar.set_label("log(1 + score - best score), lower is better")
+
+    if detector_positions is not None:
+        ax.plot(
+            detector_positions[:, 0],
+            detector_positions[:, 1],
+            detector_positions[:, 2],
+            color="cyan",
+            linewidth=1.5,
+            alpha=0.75,
+            label="detector path",
+        )
+
+    if true_source_position is not None:
+        ax.scatter(
+            true_source_position[0],
+            true_source_position[1],
+            true_source_position[2],
+            marker="*",
+            s=260,
+            color="lime",
+            edgecolor="black",
+            linewidth=0.8,
+            depthshade=False,
+            label="true source",
+        )
+
+    ax.scatter(
+        estimated_position[0],
+        estimated_position[1],
+        estimated_position[2],
+        marker="X",
+        s=170,
+        color="red",
+        edgecolor="black",
+        linewidth=0.8,
+        depthshade=False,
+        label="estimated source",
+    )
+
+    points_for_scale = [
+        np.column_stack([xs[x_indices], ys[y_indices], zs[z_indices]]),
+        estimated_position[None, :],
+    ]
+    if true_source_position is not None:
+        points_for_scale.append(true_source_position[None, :])
+    if detector_positions is not None:
+        points_for_scale.append(detector_positions)
+
+    set_equal_3d_axes(ax, np.vstack(points_for_scale))
+
+    ax.set_title("Source fit map in 3D")
+    ax.set_xlabel("x world [m]")
+    ax.set_ylabel("y world [m]")
+    ax.set_zlabel("z world [m]")
+    ax.legend(loc="upper right")
+
+    finalize_figure(fig, save_path=save_path, show=show)
