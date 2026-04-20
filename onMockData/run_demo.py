@@ -18,6 +18,7 @@ from visualization import (
 def print_summary(dataset, estimated_position, estimated_strength):
     """Print a short summary to the terminal."""
     position_error = np.linalg.norm(estimated_position - dataset["true_source_position"])
+    num_channels = dataset["counts"].shape[1]
 
     print("=== Synthetic point-source reconstruction demo ===")
     print()
@@ -28,20 +29,21 @@ def print_summary(dataset, estimated_position, estimated_strength):
     print(f"True source strength A:      {dataset['true_source_strength']:.2f}")
     print(f"Estimated source strength A: {estimated_strength:.2f}")
     print()
-    print("First 5 measurements [channels 0..5]:")
+    print(f"First 5 measurements [channels 0..{num_channels - 1}]:")
     for row in dataset["counts"][:5]:
         print(" ", row.astype(int).tolist())
 
 
 def main():
     dataset = generate_synthetic_dataset(num_measurements=24, seed=7)
+    num_channels = dataset["counts"].shape[1]
     search_min = (-0.40, -0.50, -0.10)
     search_max = (0.60, 0.30, 0.60)
 
     # Assumed model used during reconstruction.
     # It is intentionally a bit simpler than the model used for data generation.
-    assumed_backgrounds = np.full(6, 10.0, dtype=float)
-    assumed_channel_scales = np.ones(6, dtype=float)
+    assumed_backgrounds = np.full(num_channels, 10.0, dtype=float)
+    assumed_channel_scales = np.ones(num_channels, dtype=float)
     assumed_k = 4.0
 
     estimated_position, estimated_strength, history = coarse_to_fine_grid_search(
@@ -90,7 +92,7 @@ def main():
         assumed_k=assumed_k,
         search_min=search_min,
         search_max=search_max,
-        grid_size=50,
+        grid_size=30,
     )
 
     visualize_source_fit_3d(

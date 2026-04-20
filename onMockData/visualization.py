@@ -62,7 +62,16 @@ def visualize_detector_geometry(geometry, save_path=None, show=False):
     ax = fig.add_subplot(111, projection="3d")
 
     ax.scatter(positions[:, 0], positions[:, 1], positions[:, 2], s=60, color="tab:blue", label="diodes")
+    ax.plot(
+        positions[:, 0],
+        positions[:, 1],
+        positions[:, 2],
+        color="tab:blue",
+        linewidth=1.5,
+        alpha=0.65,
+    )
 
+    label_stride = 1 if len(positions) <= 8 else 2
     for index, (position, normal) in enumerate(zip(positions, normals)):
         ax.quiver(
             position[0],
@@ -75,12 +84,13 @@ def visualize_detector_geometry(geometry, save_path=None, show=False):
             color="tab:red",
             normalize=True,
         )
-        ax.text(position[0], position[1], position[2] + 0.008, f"ch{index}", fontsize=9)
+        if index % label_stride == 0 or index == len(positions) - 1:
+            ax.text(position[0], position[1], position[2] + 0.008, f"ch{index}", fontsize=8)
 
     points_for_scale = np.vstack([positions, positions + 0.03 * normals, np.zeros((1, 3))])
     set_equal_3d_axes(ax, points_for_scale)
 
-    ax.set_title("Detector geometry in local coordinates")
+    ax.set_title("Linear detector geometry in local coordinates")
     ax.set_xlabel("x local [m]")
     ax.set_ylabel("y local [m]")
     ax.set_zlabel("z local [m]")
@@ -109,7 +119,7 @@ def visualize_detector_trajectory_world(dataset, save_path=None, show=False):
         translations[:, 2],
         color="tab:blue",
         linewidth=2.0,
-        label="detector trajectory",
+        label="one-sided detector trajectory",
     )
 
     ax.scatter(
@@ -151,7 +161,7 @@ def visualize_detector_trajectory_world(dataset, save_path=None, show=False):
     points_for_scale = np.vstack([translations, source_position[None, :]])
     set_equal_3d_axes(ax, points_for_scale)
 
-    ax.set_title("Detector trajectory in world coordinates")
+    ax.set_title("One-sided detector scan in world coordinates")
     ax.set_xlabel("x world [m]")
     ax.set_ylabel("y world [m]")
     ax.set_zlabel("z world [m]")

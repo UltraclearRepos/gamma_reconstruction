@@ -80,19 +80,15 @@ def infer_detector_forward_axis(diode_normals_local):
     return np.array([0.0, 0.0, 1.0], dtype=float)
 
 
-def make_detector_geometry(num_channels=6, detector_radius=0.04):
+def make_detector_geometry(num_channels=16, diode_pitch=0.006):
     """
-    Create several diodes distributed on one plane.
+    Create a linear detector with diodes placed side by side.
 
     All diodes point along the local +Z axis.
     """
-    angles = np.linspace(0.0, 2.0 * np.pi, num_channels, endpoint=False)
     positions = np.zeros((num_channels, 3), dtype=float)
-
-    for index, angle in enumerate(angles):
-        positions[index, 0] = detector_radius * math.cos(angle)
-        positions[index, 1] = detector_radius * math.sin(angle)
-        positions[index, 2] = 0.0
+    offsets = np.arange(num_channels, dtype=float) - 0.5 * (num_channels - 1)
+    positions[:, 0] = offsets * diode_pitch
 
     normals = np.tile(np.array([[0.0, 0.0, 1.0]], dtype=float), (num_channels, 1))
     detector_forward_local = infer_detector_forward_axis(normals)
@@ -101,6 +97,7 @@ def make_detector_geometry(num_channels=6, detector_radius=0.04):
         "diode_positions_local": positions,
         "diode_normals_local": normals,
         "detector_forward_local": detector_forward_local,
+        "diode_pitch": float(diode_pitch),
     }
 
 
@@ -109,36 +106,63 @@ def make_detector_trajectory(
     source_position,
     num_measurements,
     rng,
-    angular_jitter_deg=4.0,
+    angular_jitter_deg=2.0,
+    lateral_span=0.45,
+    vertical_span=0.28,
+    base_distance=0.65,
+    distance_span=0.18,
 ):
     """
-    Generate a moving detector trajectory around the source.
+    Generate a one-sided scan trajectory for the detector.
 
-    The detector roughly points towards the source, but with small
-    random orientation errors to make the problem less idealized.
+    The detector stays on one side of the source and scans left/right,
+    up/down, and at several distances. Its nominal viewing direction is
+    constant, matching a detector head whose diodes all look one way.
     """
     rotations = np.zeros((num_measurements, 3, 3), dtype=float)
     translations = np.zeros((num_measurements, 3), dtype=float)
 
-    angles = np.linspace(0.0, 2.0 * np.pi, num_measurements, endpoint=False)
+    lateral_axis = np.array([1.0, 0.0, 0.0], dtype=float)
+    standoff_axis = np.array([0.0, -1.0, 0.0], dtype=float)
+    vertical_axis = np.array([0.0, 0.0, 1.0], dtype=float)
+    nominal_view_direction = -standoff_axis
+    base_rotation = rotation_from_local_axis(
+        direction_world=nominal_view_direction,
+        local_forward=geometry["detector_forward_local"],
+    )
 
-    for i, angle in enumerate(angles):
-        radius = 0.65 + 0.20 * math.sin(1.5 * angle) + 0.05 * rng.normal()
-        height = 0.15 * math.sin(2.0 * angle) + 0.08 * rng.normal()
+    num_rows = max(1, int(round(math.sqrt(max(num_measurements, 1) / 2.0))))
+    num_columns = max(1, int(math.ceil(num_measurements / num_rows)))
+    vertical_positions = (
+        np.linspace(-vertical_span, vertical_span, num_rows)
+        if num_rows > 1
+        else np.array([0.0], dtype=float)
+    )
 
-        detector_position = source_position + np.array(
-            [
-                radius * math.cos(angle),
-                radius * math.sin(angle),
-                0.18 + height,
-            ]
+    for i in range(num_measurements):
+        row = i // num_columns
+        column = i % num_columns
+        column_fraction = 0.5 if num_columns == 1 else column / (num_columns - 1)
+        if row % 2 == 1:
+            column_fraction = 1.0 - column_fraction
+
+        lateral_offset = (2.0 * column_fraction - 1.0) * lateral_span
+        vertical_offset = vertical_positions[row]
+        distance_phase = i / max(num_measurements, 1)
+        standoff_distance = base_distance + distance_span * math.sin(
+            2.0 * np.pi * distance_phase + 0.6 * row
+        )
+        standoff_distance += 0.03 * rng.normal()
+        standoff_distance = max(0.25, standoff_distance)
+
+        detector_position = (
+            source_position
+            + lateral_offset * lateral_axis
+            + standoff_distance * standoff_axis
+            + vertical_offset * vertical_axis
         )
 
-        ideal_view_direction = normalize(source_position - detector_position)
-        rotation = rotation_from_local_axis(
-            direction_world=ideal_view_direction,
-            local_forward=geometry["detector_forward_local"],
-        )
+        rotation = base_rotation
 
         # Small orientation mismatch to make the generated data a bit more realistic.
         jitter_axis = normalize(rng.normal(size=3))

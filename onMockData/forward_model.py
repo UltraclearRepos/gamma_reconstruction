@@ -13,7 +13,7 @@ def directional_gain(cos_theta, k):
 
     cos_theta <= 0 means the source is behind the diode and the response is 0.
     """
-    return max(0.0, cos_theta) ** k
+    return np.maximum(0.0, cos_theta) ** k
 
 
 def compute_detector_response(
@@ -30,28 +30,20 @@ def compute_detector_response(
     Returned array has shape (num_measurements, num_channels) and contains:
         alpha_c * g(theta_ic) / r_ic^2
     """
-    num_measurements = len(rotations)
-    num_channels = len(channel_scales)
-    response = np.zeros((num_measurements, num_channels), dtype=float)
+    diode_positions_world = (
+        np.einsum("mij,cj->mci", rotations, geometry["diode_positions_local"])
+        + translations[:, None, :]
+    )
+    diode_normals_world = np.einsum("mij,cj->mci", rotations, geometry["diode_normals_local"])
 
-    for i in range(num_measurements):
-        rotation = rotations[i]
-        translation = translations[i]
+    vector_to_source = source_position[None, None, :] - diode_positions_world
+    distances = np.linalg.norm(vector_to_source, axis=2)
+    direction_to_source = vector_to_source / np.maximum(distances[:, :, None], EPS)
 
-        for c in range(num_channels):
-            diode_position_world = rotation @ geometry["diode_positions_local"][c] + translation
-            diode_normal_world = rotation @ geometry["diode_normals_local"][c]
+    cos_theta = np.sum(direction_to_source * diode_normals_world, axis=2)
+    gain = directional_gain(cos_theta, k)
 
-            vector_to_source = source_position - diode_position_world
-            distance = np.linalg.norm(vector_to_source)
-            direction_to_source = vector_to_source / max(distance, EPS)
-
-            cos_theta = float(np.dot(direction_to_source, diode_normal_world))
-            gain = directional_gain(cos_theta, k)
-
-            response[i, c] = channel_scales[c] * gain / max(distance * distance, EPS)
-
-    return response
+    return channel_scales[None, :] * gain / np.maximum(distances * distances, EPS)
 
 
 def expected_counts(

@@ -23,12 +23,13 @@ def generate_synthetic_dataset(
     """
     rng = np.random.default_rng(seed)
 
-    geometry = make_detector_geometry(num_channels=6, detector_radius=0.04)
+    geometry = make_detector_geometry(num_channels=16, diode_pitch=0.006)
+    num_channels = len(geometry["diode_positions_local"])
     true_source_position = np.array([0.18, -0.12, 0.26], dtype=float)
     true_source_strength = 190.0
 
-    true_backgrounds = rng.uniform(8.0, 12.0, size=6)
-    true_channel_scales = rng.normal(loc=1.0, scale=0.08, size=6)
+    true_backgrounds = rng.uniform(8.0, 12.0, size=num_channels)
+    true_channel_scales = rng.normal(loc=1.0, scale=0.08, size=num_channels)
     generation_k = 4.5
 
     rotations, translations = make_detector_trajectory(
