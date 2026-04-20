@@ -170,11 +170,40 @@ def visualize_detector_trajectory_world(dataset, save_path=None, show=False):
     finalize_figure(fig, save_path=save_path, show=show)
 
 
-def visualize_source_fit_3d(
-    xs,
-    ys,
-    zs,
-    score_map,
+def get_history_candidates(history):
+    """Collect candidate positions and scores saved by reconstruction methods."""
+    position_chunks = []
+    score_chunks = []
+
+    for item in history:
+        if "candidate_positions" in item and "candidate_scores" in item:
+            position_chunks.append(np.asarray(item["candidate_positions"], dtype=float))
+            score_chunks.append(np.asarray(item["candidate_scores"], dtype=float))
+
+    if not position_chunks:
+        return np.empty((0, 3), dtype=float), np.empty(0, dtype=float)
+
+    return np.vstack(position_chunks), np.concatenate(score_chunks)
+
+
+def get_history_best_positions(history):
+    """Collect best_position trace if history entries provide it."""
+    best_positions = []
+
+    for item in history:
+        if "best_position" in item:
+            best_position = np.asarray(item["best_position"], dtype=float)
+            if best_position.shape == (3,):
+                best_positions.append(best_position)
+
+    if not best_positions:
+        return np.empty((0, 3), dtype=float)
+
+    return np.vstack(best_positions)
+
+
+def visualize_reconstruction_history_3d(
+    history,
     estimated_position,
     true_source_position=None,
     detector_positions=None,
@@ -183,38 +212,49 @@ def visualize_source_fit_3d(
     max_points=500,
 ):
     """
-    Show where the source could be in 3D.
+    Show candidate source positions evaluated during reconstruction.
 
-    score_map contains negative log-likelihood values, so lower is better.
-    To keep the plot readable, we draw only the best-scoring grid points.
+    History entries may contain candidate_positions and candidate_scores.
+    Lower score means the candidate explains measured counts better.
     """
     import matplotlib.pyplot as plt
 
-    score_delta = score_map - np.min(score_map)
-    flat_score_delta = score_delta.ravel()
-    num_points = min(max_points, len(flat_score_delta))
-    best_flat_indices = np.argpartition(flat_score_delta, num_points - 1)[:num_points]
-    y_indices, x_indices, z_indices = np.unravel_index(best_flat_indices, score_map.shape)
-
-    point_scores = np.log1p(flat_score_delta[best_flat_indices])
-    point_sizes = 8.0 + 20.0 * (1.0 - point_scores / max(np.max(point_scores), EPS))
+    candidate_positions, candidate_scores = get_history_candidates(history)
 
     fig = plt.figure(figsize=(8, 7))
     ax = fig.add_subplot(111, projection="3d")
+    points_for_scale = [estimated_position[None, :]]
 
-    scatter = ax.scatter(
-        xs[x_indices],
-        ys[y_indices],
-        zs[z_indices],
-        c=point_scores,
-        s=point_sizes,
-        cmap="viridis_r",
-        alpha=0.25,
-        depthshade=False,
-    )
+    if len(candidate_scores) > 0:
+        score_delta = candidate_scores - np.min(candidate_scores)
+        num_points = min(max_points, len(candidate_scores))
 
-    colorbar = fig.colorbar(scatter, ax=ax, shrink=0.75)
-    colorbar.set_label("log(1 + score - best score), lower is better")
+        if num_points < len(candidate_scores):
+            point_indices = np.argpartition(score_delta, num_points - 1)[:num_points]
+        else:
+            point_indices = np.arange(len(candidate_scores))
+
+        point_positions = candidate_positions[point_indices]
+        point_scores = np.log1p(score_delta[point_indices])
+        max_point_score = max(np.max(point_scores), EPS)
+        point_sizes = 8.0 + 20.0 * (1.0 - point_scores / max_point_score)
+
+        scatter = ax.scatter(
+            point_positions[:, 0],
+            point_positions[:, 1],
+            point_positions[:, 2],
+            c=point_scores,
+            s=point_sizes,
+            cmap="viridis_r",
+            alpha=0.25,
+            depthshade=False,
+        )
+        colorbar = fig.colorbar(scatter, ax=ax, shrink=0.75)
+        colorbar.set_label("log(1 + score - best score), lower is better")
+        points_for_scale.append(point_positions)
+
+    best_positions = get_history_best_positions(history)
+    points_for_scale.append(best_positions)
 
     if detector_positions is not None:
         ax.plot(
@@ -254,10 +294,6 @@ def visualize_source_fit_3d(
         label="estimated source",
     )
 
-    points_for_scale = [
-        np.column_stack([xs[x_indices], ys[y_indices], zs[z_indices]]),
-        estimated_position[None, :],
-    ]
     if true_source_position is not None:
         points_for_scale.append(true_source_position[None, :])
     if detector_positions is not None:
@@ -265,7 +301,7 @@ def visualize_source_fit_3d(
 
     set_equal_3d_axes(ax, np.vstack(points_for_scale))
 
-    ax.set_title("Source fit map in 3D")
+    ax.set_title("Reconstruction search history in 3D")
     ax.set_xlabel("x world [m]")
     ax.set_ylabel("y world [m]")
     ax.set_zlabel("z world [m]")
