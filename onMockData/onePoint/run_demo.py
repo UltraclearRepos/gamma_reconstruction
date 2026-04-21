@@ -3,8 +3,13 @@ Short entrypoint for the synthetic point-source reconstruction demo.
 """
 
 from pathlib import Path
+import sys
 
 import numpy as np
+
+ON_MOCK_DATA_DIR = Path(__file__).resolve().parents[1]
+if str(ON_MOCK_DATA_DIR) not in sys.path:
+    sys.path.insert(0, str(ON_MOCK_DATA_DIR))
 
 from reconstruction_algorithms import reconstruct_source
 from simulation import generate_synthetic_dataset
@@ -72,27 +77,37 @@ def print_history(history):
 def main():
     # Change only this value while testing reconstruction methods:
     # "coarse_to_fine", "grid_search", or "random_search".
-    reconstruction_method = "random_search"
+    reconstruction_method = "coarse_to_fine"
 
     dataset = generate_synthetic_dataset(num_measurements=24, seed=7)
     num_channels = dataset["counts"].shape[1]
     search_min = (-0.40, -0.50, -0.10)
     search_max = (0.60, 0.30, 0.60)
 
+    # Good test range: 11000..13000 when simulated background is about 12000.
+    ASSUMED_BACKGROUND_MEAN = 10000
+
+    # Good test range: 0.7..1.3 for global sensitivity mismatch.
+    ASSUMED_CHANNEL_SCALE = 1.0
+
+    # Good test range: 2.0..7.0. Lower = wider detector response, higher = narrower.
+    ASSUMED_K = 4.0
+
     # Assumed model used during reconstruction.
-    # It is intentionally a bit simpler than the model used for data generation.
-    assumed_backgrounds = np.full(num_channels, 10.0, dtype=float)
-    assumed_channel_scales = np.ones(num_channels, dtype=float)
-    assumed_k = 4.0
+    # Change this dict to test how reconstruction behaves with different
+    # detector/background assumptions.
+    assumed_model = {
+        "assumed_backgrounds": np.full(num_channels, ASSUMED_BACKGROUND_MEAN, dtype=float),
+        "assumed_channel_scales": np.full(num_channels, ASSUMED_CHANNEL_SCALE, dtype=float),
+        "assumed_k": ASSUMED_K,
+    }
 
     estimated_position, estimated_strength, history = reconstruct_source(
         counts=dataset["counts"],
         geometry=dataset["geometry"],
         rotations=dataset["rotations"],
         translations=dataset["translations"],
-        assumed_backgrounds=assumed_backgrounds,
-        assumed_channel_scales=assumed_channel_scales,
-        assumed_k=assumed_k,
+        **assumed_model,
         search_min=search_min,
         search_max=search_max,
         method=reconstruction_method,
@@ -112,7 +127,7 @@ def main():
     print()
     print_history(history)
 
-    output_dir = Path("onMockData/visualizations")
+    output_dir = ON_MOCK_DATA_DIR / "onePoint" / "visualizations"
     visualize_detector_geometry(
         dataset["geometry"],
         save_path=output_dir / "detector_geometry.png",
@@ -130,7 +145,7 @@ def main():
         true_source_position=dataset["true_source_position"],
         detector_positions=dataset["translations"],
         save_path=output_dir / f"reconstruction_history_3d_{reconstruction_method}.png",
-        max_points=200,
+        max_points=500000,
         show=False,
     )
 

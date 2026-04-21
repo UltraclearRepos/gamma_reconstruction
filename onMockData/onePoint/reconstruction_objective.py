@@ -4,8 +4,8 @@ Objective functions used by reconstruction algorithms.
 
 import numpy as np
 
-from forward_model import compute_detector_response
-from geometry import EPS
+from common.forward_model import compute_detector_response
+from common.geometry import EPS
 
 
 def estimate_strength_least_squares(
