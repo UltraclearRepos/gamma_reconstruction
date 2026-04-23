@@ -111,13 +111,15 @@ def make_detector_trajectory(
     vertical_span=0.28,
     base_distance=0.65,
     distance_span=0.18,
+    orientation_mode="fixed",
+    fixed_view_direction=None,
 ):
     """
     Generate a one-sided scan trajectory for the detector.
 
     The detector stays on one side of the source and scans left/right,
     up/down, and at several distances. Its nominal viewing direction is
-    constant, matching a detector head whose diodes all look one way.
+    either constant, or it can be re-aimed towards the provided source_position.
     """
     rotations = np.zeros((num_measurements, 3, 3), dtype=float)
     translations = np.zeros((num_measurements, 3), dtype=float)
@@ -126,10 +128,28 @@ def make_detector_trajectory(
     standoff_axis = np.array([0.0, -1.0, 0.0], dtype=float)
     vertical_axis = np.array([0.0, 0.0, 1.0], dtype=float)
     nominal_view_direction = -standoff_axis
-    base_rotation = rotation_from_local_axis(
-        direction_world=nominal_view_direction,
-        local_forward=geometry["detector_forward_local"],
-    )
+
+    orientation_mode = str(orientation_mode or "fixed").strip().lower().replace("-", "_")
+    if fixed_view_direction is not None:
+        fixed_view_direction = normalize(np.asarray(fixed_view_direction, dtype=float))
+        if np.linalg.norm(fixed_view_direction) < EPS:
+            raise ValueError("fixed_view_direction must be a non-zero 3D vector.")
+
+    if orientation_mode == "fixed":
+        if fixed_view_direction is None:
+            raise ValueError(
+                "For orientation_mode == 'fixed' you must provide fixed_view_direction, "
+                "e.g. (0, 1, 0) or (1, 0, 0)."
+            )
+        view_direction = fixed_view_direction
+        base_rotation = rotation_from_local_axis(
+            direction_world=view_direction,
+            local_forward=geometry["detector_forward_local"],
+        )
+    elif orientation_mode == "towards_target":
+        base_rotation = None
+    else:
+        raise ValueError("orientation_mode must be 'fixed' or 'towards_target'. Got: " f"{orientation_mode!r}")
 
     num_rows = max(1, int(round(math.sqrt(max(num_measurements, 1) / 2.0))))
     num_columns = max(1, int(math.ceil(num_measurements / num_rows)))
@@ -162,7 +182,16 @@ def make_detector_trajectory(
             + vertical_offset * vertical_axis
         )
 
-        rotation = base_rotation
+        if base_rotation is None:
+            view_direction = source_position - detector_position
+            if np.linalg.norm(view_direction) < EPS:
+                view_direction = nominal_view_direction
+            rotation = rotation_from_local_axis(
+                direction_world=view_direction,
+                local_forward=geometry["detector_forward_local"],
+            )
+        else:
+            rotation = base_rotation
 
         # Small orientation mismatch to make the generated data a bit more realistic.
         jitter_axis = normalize(rng.normal(size=3))

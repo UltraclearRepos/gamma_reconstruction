@@ -37,9 +37,18 @@ def expected_counts_multi_source(
 def generate_synthetic_dataset(
     num_measurements=30,
     seed=11,
+    orientation_mode="fixed",
+    fixed_view_direction=(0.0, 1.0, 0.0),
 ):
     """
     Generate one synthetic multi-source experiment.
+
+    orientation_mode:
+        - "fixed": keep detector pointing in one direction (default).
+        - "towards_target": re-aim detector towards scan_center each measurement.
+
+    fixed_view_direction:
+        3D vector for "fixed" mode, e.g. (0, 1, 0) or (1, 0, 0).
 
     The output keeps true_sources as a list because multi-point algorithms may
     reconstruct a map rather than one estimated position.
@@ -56,8 +65,8 @@ def generate_synthetic_dataset(
     ]
     scan_center = np.mean([source["position"] for source in true_sources], axis=0)
 
-    background_mean = 12000.0
-    background_channel_std = 350.0
+    background_mean = 1000.0
+    background_channel_std = 50.0
     peak_total_source_signal = 5000.0
 
     true_backgrounds = rng.normal(
@@ -76,6 +85,8 @@ def generate_synthetic_dataset(
         angular_jitter_deg=3.0,
         lateral_span=0.60,
         vertical_span=0.36,
+        orientation_mode=orientation_mode,
+        fixed_view_direction=fixed_view_direction,
     )
 
     unit_sources = [

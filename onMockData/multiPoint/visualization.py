@@ -10,11 +10,57 @@ from common.geometry import EPS
 from common.visualization import finalize_figure, set_equal_3d_axes
 
 
+def plot_detector_forward_directions(
+    ax,
+    translations,
+    rotations,
+    forward_local,
+    stride,
+    length,
+    color,
+    alpha,
+    linewidth,
+):
+    """Draw sparse arrows that show detector forward direction along a trajectory."""
+    if translations is None or rotations is None:
+        return
+
+    translations = np.asarray(translations, dtype=float)
+    rotations = np.asarray(rotations, dtype=float)
+    forward_local = np.asarray(forward_local, dtype=float)
+
+    num_measurements = len(translations)
+    if num_measurements == 0:
+        return
+
+    stride = max(1, int(stride))
+    indices = np.arange(0, num_measurements, stride, dtype=int)
+
+    positions = translations[indices]
+    forward_world = rotations[indices] @ forward_local
+
+    ax.quiver(
+        positions[:, 0],
+        positions[:, 1],
+        positions[:, 2],
+        forward_world[:, 0],
+        forward_world[:, 1],
+        forward_world[:, 2],
+        length=float(length),
+        color=color,
+        alpha=float(alpha),
+        linewidth=float(linewidth),
+        normalize=True,
+    )
+
+
 def visualize_multi_source_scene(dataset, save_path=None, show=False):
     """Show detector trajectory and all true point sources in world coordinates."""
     import matplotlib.pyplot as plt
 
     translations = dataset["translations"]
+    rotations = dataset.get("rotations")
+    forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
     source_positions = np.array([source["position"] for source in dataset["true_sources"]])
     source_strengths = np.array([source["strength"] for source in dataset["true_sources"]])
 
@@ -35,6 +81,19 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False):
         translations[:, 2],
         color="tab:blue",
         s=18,
+    )
+
+    stride = max(1, len(translations) // 20)
+    plot_detector_forward_directions(
+        ax=ax,
+        translations=translations,
+        rotations=rotations,
+        forward_local=forward_local,
+        stride=stride,
+        length=0.12,
+        color="tab:green",
+        alpha=0.70,
+        linewidth=1.0,
     )
 
     max_strength = max(float(np.max(source_strengths)), EPS)
@@ -90,6 +149,8 @@ def visualize_mlem_activity(
     import matplotlib.pyplot as plt
 
     translations = dataset["translations"]
+    rotations = dataset.get("rotations")
+    forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
     true_source_positions = np.array([source["position"] for source in dataset["true_sources"]])
     activity = np.asarray(activity, dtype=float)
     candidate_positions = np.asarray(candidate_positions, dtype=float)
@@ -134,6 +195,19 @@ def visualize_mlem_activity(
         label="full detector trajectory",
     )
 
+    # Visualize detector pointing direction along the full path.
+    plot_detector_forward_directions(
+        ax=ax,
+        translations=translations,
+        rotations=rotations,
+        forward_local=forward_local,
+        stride=max(1, len(translations) // 18),
+        length=0.10,
+        color="lightgray",
+        alpha=0.25,
+        linewidth=0.9,
+    )
+
     # Part of trajectory already used by streaming reconstruction.
     if used_measurements is not None:
         used_end = int(np.clip(used_measurements, 1, len(translations)))
@@ -146,6 +220,17 @@ def visualize_mlem_activity(
             linewidth=2.4,
             alpha=0.95,
             label="trajectory used so far",
+        )
+        plot_detector_forward_directions(
+            ax=ax,
+            translations=translations[used_slice],
+            rotations=rotations[used_slice] if rotations is not None else None,
+            forward_local=forward_local,
+            stride=max(1, used_end // 18),
+            length=0.11,
+            color="tab:blue",
+            alpha=0.70,
+            linewidth=1.1,
         )
 
     # Newly added chunk in this update.
@@ -161,6 +246,17 @@ def visualize_mlem_activity(
                 linewidth=3.6,
                 alpha=0.95,
                 label="new trajectory chunk",
+            )
+            plot_detector_forward_directions(
+                ax=ax,
+                translations=translations[start:end],
+                rotations=rotations[start:end] if rotations is not None else None,
+                forward_local=forward_local,
+                stride=max(1, (end - start) // 8),
+                length=0.12,
+                color="tab:orange",
+                alpha=0.90,
+                linewidth=1.2,
             )
 
     ax.scatter(

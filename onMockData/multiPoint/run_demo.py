@@ -77,7 +77,15 @@ def main():
     # Currently available: "mlem".
     reconstruction_method = "mlem"
 
-    dataset = generate_synthetic_dataset(num_measurements=30, seed=11)
+    ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
+    FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
+
+    dataset = generate_synthetic_dataset(
+        num_measurements=30,
+        seed=11,
+        orientation_mode=ORIENTATION_MODE,
+        fixed_view_direction=FIXED_VIEW_DIRECTION,
+    )
     print_summary(dataset)
 
     num_channels = dataset["counts"].shape[1]

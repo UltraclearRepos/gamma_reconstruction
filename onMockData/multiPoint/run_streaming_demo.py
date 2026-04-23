@@ -12,7 +12,7 @@ if str(ON_MOCK_DATA_DIR) not in sys.path:
     sys.path.insert(0, str(ON_MOCK_DATA_DIR))
 
 from simulation import generate_synthetic_dataset
-from streaming_algorithms import streaming_mlem_reconstruction
+from streaming_algorithms import reconstruct_sources
 from visualization import (
     create_gif_from_frames,
     visualize_history_score,
@@ -72,19 +72,32 @@ def print_streaming_summary(result):
 
 
 def main():
-    dataset = generate_synthetic_dataset(num_measurements=50, seed=11)
+    ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
+    FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
+    STREAMING_METHOD = "incremental_mlem"  # "prefix_mlem" or "incremental_mlem"
+    RELAXATION = 1.0  # used by incremental_mlem; try 0.5..1.0
+    AVOID_DETECTOR_DISTANCE = 0.35  # [m] penalty radius around trajectory; try 0.25..0.50
+    AVOID_DETECTOR_POWER = 6.0  # higher => stronger push away from detector
+
+    dataset = generate_synthetic_dataset(
+        num_measurements=50,
+        seed=11,
+        orientation_mode=ORIENTATION_MODE,
+        fixed_view_direction=FIXED_VIEW_DIRECTION,
+    )
+
     print_dataset_summary(dataset)
 
     num_channels = dataset["counts"].shape[1]
     search_min = (-0.35, -0.45, -0.05)
     search_max = (0.55, 0.20, 0.55)
 
-    ASSUMED_BACKGROUND_MEAN = 10000.0
+    ASSUMED_BACKGROUND_MEAN = 1200.0
     ASSUMED_CHANNEL_SCALE = 1.0
     ASSUMED_K = 4.0
 
     GRID_SIZE = 9
-    INNER_ITERATIONS_PER_UPDATE = 4
+    INNER_ITERATIONS_PER_UPDATE = 20
     MEASUREMENTS_PER_UPDATE = 2
     MAX_SOURCES_TO_REPORT = 3
 
@@ -94,7 +107,7 @@ def main():
         "assumed_k": ASSUMED_K,
     }
 
-    result = streaming_mlem_reconstruction(
+    result = reconstruct_sources(
         counts=dataset["counts"],
         geometry=dataset["geometry"],
         rotations=dataset["rotations"],
@@ -102,11 +115,15 @@ def main():
         **assumed_model,
         search_min=search_min,
         search_max=search_max,
+        method=STREAMING_METHOD,
         grid_size=GRID_SIZE,
         inner_iterations_per_update=INNER_ITERATIONS_PER_UPDATE,
         measurements_per_update=MEASUREMENTS_PER_UPDATE,
         max_sources=MAX_SOURCES_TO_REPORT,
         min_source_distance=0.08,
+        relaxation=RELAXATION,
+        avoid_detector_distance=AVOID_DETECTOR_DISTANCE,
+        avoid_detector_power=AVOID_DETECTOR_POWER,
     )
     print_streaming_summary(result)
 
