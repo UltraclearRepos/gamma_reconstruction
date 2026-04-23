@@ -2,6 +2,8 @@
 Visualization helpers for multi-point source experiments.
 """
 
+from pathlib import Path
+
 import numpy as np
 
 from common.geometry import EPS
@@ -77,6 +79,9 @@ def visualize_mlem_activity(
     candidate_positions,
     activity,
     estimated_sources=None,
+    used_measurements=None,
+    update_start=None,
+    update_end=None,
     save_path=None,
     show=False,
     max_voxels=300,
@@ -118,15 +123,45 @@ def visualize_mlem_activity(
         colorbar.set_label("log(1 + activity)")
         points_for_scale.append(voxel_positions)
 
+    # Full detector trajectory in the background.
     ax.plot(
         translations[:, 0],
         translations[:, 1],
         translations[:, 2],
-        color="tab:blue",
-        linewidth=1.5,
-        alpha=0.65,
-        label="detector trajectory",
+        color="lightgray",
+        linewidth=1.2,
+        alpha=0.9,
+        label="full detector trajectory",
     )
+
+    # Part of trajectory already used by streaming reconstruction.
+    if used_measurements is not None:
+        used_end = int(np.clip(used_measurements, 1, len(translations)))
+        used_slice = slice(0, used_end)
+        ax.plot(
+            translations[used_slice, 0],
+            translations[used_slice, 1],
+            translations[used_slice, 2],
+            color="tab:blue",
+            linewidth=2.4,
+            alpha=0.95,
+            label="trajectory used so far",
+        )
+
+    # Newly added chunk in this update.
+    if update_start is not None and update_end is not None:
+        start = int(np.clip(update_start, 0, len(translations)))
+        end = int(np.clip(update_end, 0, len(translations)))
+        if end > start:
+            ax.plot(
+                translations[start:end, 0],
+                translations[start:end, 1],
+                translations[start:end, 2],
+                color="tab:orange",
+                linewidth=3.6,
+                alpha=0.95,
+                label="new trajectory chunk",
+            )
 
     ax.scatter(
         true_source_positions[:, 0],
@@ -176,7 +211,7 @@ def visualize_history_score(history, save_path=None, show=False):
     scores = []
     for index, item in enumerate(history, start=1):
         if "score" in item:
-            steps.append(item.get("iteration", index))
+            steps.append(item.get("iteration", item.get("used_measurements", index)))
             scores.append(item["score"])
 
     if not scores:
@@ -190,3 +225,101 @@ def visualize_history_score(history, save_path=None, show=False):
     ax.grid(True, alpha=0.3)
 
     finalize_figure(fig, save_path=save_path, show=show)
+
+
+def visualize_streaming_best_position(history, dataset, save_path=None, show=False):
+    """Plot best estimated source position after each streaming update."""
+    import matplotlib.pyplot as plt
+
+    used_measurements = []
+    x_values = []
+    y_values = []
+    z_values = []
+
+    for item in history:
+        if "best_position" not in item:
+            continue
+        position = np.asarray(item["best_position"], dtype=float)
+        if position.shape != (3,):
+            continue
+
+        used_measurements.append(float(item.get("used_measurements", len(used_measurements) + 1)))
+        x_values.append(float(position[0]))
+        y_values.append(float(position[1]))
+        z_values.append(float(position[2]))
+
+    if not used_measurements:
+        return
+
+    true_positions = np.array([source["position"] for source in dataset["true_sources"]])
+    true_centroid = np.mean(true_positions, axis=0)
+
+    fig, axes = plt.subplots(3, 1, figsize=(7, 8), sharex=True)
+    coordinate_series = [
+        ("x", x_values, true_centroid[0], "tab:red"),
+        ("y", y_values, true_centroid[1], "tab:green"),
+        ("z", z_values, true_centroid[2], "tab:blue"),
+    ]
+
+    for axis, (label, values, true_value, color) in zip(axes, coordinate_series):
+        axis.plot(used_measurements, values, marker="o", linewidth=1.7, color=color, label=f"estimated {label}")
+        axis.axhline(true_value, linestyle="--", color="black", linewidth=1.0, label=f"true centroid {label}")
+        axis.set_ylabel(f"{label} [m]")
+        axis.grid(True, alpha=0.3)
+        axis.legend(loc="best")
+
+    axes[-1].set_xlabel("used measurements")
+    fig.suptitle("Streaming estimate vs number of measurements")
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def create_gif_from_frames(
+    frames_dir,
+    output_path=None,
+    pattern="update_*.png",
+    fps=5.0,
+    loop=0,
+):
+    """
+    Build an animated GIF from saved frame images.
+
+    Frames are sorted lexicographically, so names like update_001.png,
+    update_002.png, ... are handled in the expected order.
+    """
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise RuntimeError(
+            "Pillow is required to create GIF files. Install it with 'pip install pillow'."
+        ) from exc
+
+    frames_dir = Path(frames_dir)
+    if output_path is None:
+        output_path = frames_dir / f"{frames_dir.name}_{int(round(float(fps)))}fps.gif"
+    output_path = Path(output_path)
+
+    frame_paths = sorted(frames_dir.glob(pattern))
+    if not frame_paths:
+        raise ValueError(f"No frames matching '{pattern}' in {frames_dir}.")
+
+    if fps <= 0:
+        raise ValueError("fps must be > 0.")
+    duration_ms = int(round(1000.0 / float(fps)))
+
+    images = []
+    for path in frame_paths:
+        with Image.open(path) as frame:
+            images.append(frame.convert("RGB"))
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    images[0].save(
+        output_path,
+        save_all=True,
+        append_images=images[1:],
+        duration=duration_ms,
+        loop=int(loop),
+        optimize=False,
+    )
+    return output_path
