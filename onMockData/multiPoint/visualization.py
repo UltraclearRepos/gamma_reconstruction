@@ -150,6 +150,7 @@ def visualize_mlem_activity(
     axis_limits=None,
     activity_color_limits=None,
     activity_size_reference=None,
+    highlight_used_trajectory=True,
 ):
     """Show the strongest voxels from an ML-EM activity reconstruction."""
     import matplotlib.pyplot as plt
@@ -200,15 +201,19 @@ def visualize_mlem_activity(
         colorbar.set_label("log(1 + activity)")
         points_for_scale.append(voxel_positions)
 
-    # Full detector trajectory in the background.
+    # Full detector trajectory.
+    full_trajectory_color = "lightgray" if highlight_used_trajectory else "tab:blue"
+    full_trajectory_alpha = 0.9 if highlight_used_trajectory else 0.95
+    full_trajectory_width = 1.2 if highlight_used_trajectory else 2.4
+    full_trajectory_label = "full detector trajectory" if highlight_used_trajectory else "detector trajectory"
     ax.plot(
         translations[:, 0],
         translations[:, 1],
         translations[:, 2],
-        color="lightgray",
-        linewidth=1.2,
-        alpha=0.9,
-        label="full detector trajectory",
+        color=full_trajectory_color,
+        linewidth=full_trajectory_width,
+        alpha=full_trajectory_alpha,
+        label=full_trajectory_label,
     )
 
     # Visualize detector pointing direction along the full path.
@@ -218,14 +223,14 @@ def visualize_mlem_activity(
         rotations=rotations,
         forward_local=forward_local,
         stride=max(1, len(translations) // 18),
-        length=0.10,
-        color="lightgray",
-        alpha=0.25,
-        linewidth=0.9,
+        length=0.11 if highlight_used_trajectory else 0.12,
+        color=full_trajectory_color,
+        alpha=0.25 if highlight_used_trajectory else 0.70,
+        linewidth=0.9 if highlight_used_trajectory else 1.1,
     )
 
     # Part of trajectory already used by streaming reconstruction.
-    if used_measurements is not None:
+    if highlight_used_trajectory and used_measurements is not None:
         used_end = int(np.clip(used_measurements, 1, len(translations)))
         used_slice = slice(0, used_end)
         ax.plot(

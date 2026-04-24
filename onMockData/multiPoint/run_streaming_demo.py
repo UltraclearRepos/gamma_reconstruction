@@ -52,7 +52,31 @@ def print_dataset_summary(dataset):
         "Measurement mean min/max:   "
         f"{counts.mean(axis=1).min():.1f} / {counts.mean(axis=1).max():.1f}"
     )
-    print(f"Background mean:            {dataset['background_mean']:.1f}")
+    print(f"Measurement duration [s]:   {dataset['measurement_duration_seconds']:.2f}")
+    print(f"Background mean [/s]:       {dataset['background_mean_per_second']:.1f}")
+    print(f"Background mean / sample:   {dataset['background_mean']:.1f}")
+    print(f"Peak source signal [/s]:    {dataset['peak_total_source_signal_per_second']:.1f}")
+    print(f"Peak source signal/sample:  {dataset['peak_total_source_signal']:.1f}")
+
+
+def print_generated_counts_table(dataset):
+    """Print generated count samples for every measurement and detector channel."""
+    counts = np.asarray(dataset["counts"], dtype=float)
+    num_measurements, num_channels = counts.shape
+    channel_headers = [f"ch{channel_index + 1:02d}" for channel_index in range(num_channels)]
+    header = ["idx", *channel_headers, "sum", "mean"]
+
+    print()
+    print(f"Generated count samples ({num_measurements} measurements x {num_channels} channels):")
+    print(" ".join(f"{column:>7}" for column in header))
+    for measurement_index, measurement_counts in enumerate(counts, start=1):
+        row = [
+            f"{measurement_index:7d}",
+            *[f"{value:7.0f}" for value in measurement_counts],
+            f"{np.sum(measurement_counts):7.0f}",
+            f"{np.mean(measurement_counts):7.1f}",
+        ]
+        print(" ".join(row))
 
 
 def print_streaming_summary(result):
@@ -66,6 +90,8 @@ def print_streaming_summary(result):
             f"used_measurements={int(item['used_measurements'])}, "
             f"best_position={best_position}, "
             f"best_activity={item['best_activity']:.2f}, "
+            f"total_activity={item['total_activity']:.2f}, "
+            f"signal_scale={item['signal_normalization_scale']:.3f}, "
             f"score={item['score']:.2f}"
         )
 
@@ -126,6 +152,7 @@ def append_streaming_run_csv(csv_path, parameters, final_history_item):
         "activity_threshold",
         "selected_activity_fraction",
         "all_source_distance_min",
+        "all_source_distance_mean",
         "all_source_distance_weighted_mean",
         "all_source_distance_median",
         "all_source_distance_p90",
@@ -139,7 +166,11 @@ def append_streaming_run_csv(csv_path, parameters, final_history_item):
         "final_score": float(final_history_item["score"]),
         "final_total_activity": float(final_history_item["total_activity"]),
         "final_max_activity": float(final_history_item["max_activity"]),
+        "final_best_position": to_csv_value(final_history_item["best_position"]),
         "final_best_activity": float(final_history_item["best_activity"]),
+        "final_observed_signal": float(final_history_item["observed_signal"]),
+        "final_predicted_signal": float(final_history_item["predicted_signal"]),
+        "final_signal_normalization_scale": float(final_history_item["signal_normalization_scale"]),
         "metric_selection": metrics["selection"],
         "metric_per_source_distances": to_csv_value(metrics["per_source_distances"]),
     }
@@ -149,9 +180,25 @@ def append_streaming_run_csv(csv_path, parameters, final_history_item):
         row[f"metric_{key}"] = to_csv_value(metrics[key])
 
     csv_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(row.keys())
+    if csv_path.exists() and csv_path.stat().st_size > 0:
+        with csv_path.open("r", newline="", encoding="utf-8") as csv_file:
+            reader = csv.DictReader(csv_file)
+            existing_fieldnames = reader.fieldnames or []
+            existing_rows = list(reader)
+        merged_fieldnames = existing_fieldnames + [
+            fieldname for fieldname in fieldnames if fieldname not in existing_fieldnames
+        ]
+        if merged_fieldnames != existing_fieldnames:
+            with csv_path.open("w", newline="", encoding="utf-8") as csv_file:
+                writer = csv.DictWriter(csv_file, fieldnames=merged_fieldnames)
+                writer.writeheader()
+                writer.writerows(existing_rows)
+        fieldnames = merged_fieldnames
+
     write_header = not csv_path.exists() or csv_path.stat().st_size == 0
     with csv_path.open("a", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=list(row.keys()))
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         if write_header:
             writer.writeheader()
         writer.writerow(row)
@@ -168,21 +215,22 @@ def main():
     ]
     NUM_CHANNELS = 16
     DIODE_PITCH = 0.006
-    BACKGROUND_MEAN = 1000.0
-    BACKGROUND_CHANNEL_STD = 10.0
+    MEASUREMENT_DURATION_SECONDS = 10.0
+    BACKGROUND_MEAN_PER_SECOND = 0.0
+    BACKGROUND_CHANNEL_STD_PER_SECOND = 0.0
     CHANNEL_SCALE_MEAN = 1.0
     CHANNEL_SCALE_STD = 0.08
     GENERATION_K = 4.5  # >= 0; sensible ~0..10. Higher = narrower angular response, so off-axis sources give fewer counts.
-    PEAK_TOTAL_SOURCE_SIGNAL = 5000.0
+    PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND = 5000.0
 
     # Reconstruction volume.
-    SEARCH_MIN = (-0.55, -0.65, -0.15)
-    SEARCH_MAX = (0.75, 0.35, 0.75)
+    SEARCH_MIN = (-0.55, -0.55, -0.55)
+    SEARCH_MAX = (0.55, 0.55, 0.55)
     GRID_SIZE = 13
 
     # Mock detector trajectory.
-    TRAJECTORY_MODE = "around_center"  # "grid_scan" or "around_center"
-    ORIENTATION_MODE = "towards_target"  # "fixed" or "towards_target" | "towards_target" recommended for TRAJECTORY_MODE="around_center"
+    TRAJECTORY_MODE = "grid_scan"  # "grid_scan" or "around_center"
+    ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target" | "towards_target" recommended for TRAJECTORY_MODE="around_center"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
     FIXED_SWEEP_Z_DEG = 20.0  # fixed mode only: left/right viewing sweep around world Z axis.
     FIXED_SWEEP_X_DEG = -20.0  # fixed mode only: up/down viewing sweep around world X axis.
@@ -192,38 +240,40 @@ def main():
     VERTICAL_SPAN = 0.36  # grid_scan only: max up/down position offset from SCAN_CENTER [m].
     BASE_DISTANCE = 0.65  # grid_scan only: nominal detector distance from SCAN_CENTER [m].
     DISTANCE_SPAN = 0.18  # grid_scan only: sinusoidal variation of detector distance [m].
-    ORBIT_RADIUS = 0.8  # around_center only: nominal radius of detector orbit around SCAN_CENTER [m].
-    ORBIT_RADIUS_SPAN = 0.2  # around_center only: sinusoidal radius variation during orbit [m].
+    ORBIT_RADIUS = 1.2  # around_center only: nominal radius of detector orbit around SCAN_CENTER [m].
+    ORBIT_RADIUS_SPAN = 0  # around_center only: sinusoidal radius variation during orbit [m].
     ORBIT_ANGLE_SPAN_DEG = 360.0  # around_center only: covered orbit angle; 360 means full circle.
     ORBIT_START_ANGLE_DEG = 0.0  # around_center only: starting angle of orbit in XY plane.
     ORBIT_VERTICAL_SPAN = 0.2  # around_center only: sinusoidal up/down motion during orbit [m].
 
     # Assumed reconstruction model.
-    ASSUMED_BACKGROUND_MEAN = BACKGROUND_MEAN
+    ASSUMED_BACKGROUND_MEAN_PER_SECOND = BACKGROUND_MEAN_PER_SECOND
     ASSUMED_CHANNEL_SCALE = CHANNEL_SCALE_MEAN
     ASSUMED_K = GENERATION_K
 
     # Streaming reconstruction algorithm.
     STREAMING_METHOD = "incremental_mlem"  # "prefix_mlem" or "incremental_mlem"
-    RELAXATION = 0.6  # used by incremental_mlem; valid range: (0, 1];  1.0 = no relaxation (standard MLEM); smaller = more conservative updates
-    INNER_ITERATIONS_PER_UPDATE = 20
+    RELAXATION = 0.95  # used by incremental_mlem; valid range: (0, 1];  1.0 = no relaxation (standard MLEM); smaller = more conservative updates
+    INNER_ITERATIONS_PER_UPDATE = 50
     MEASUREMENTS_PER_UPDATE = 2
     MAX_SOURCES_TO_REPORT = 1
     MIN_SOURCE_DISTANCE = 0.08
-    AVOID_DETECTOR_STRENGTH = 0  # 0 disables; how much distance is penalized
+    AVOID_DETECTOR_STRENGTH = 0.2  # 0 disables; how much distance is penalized
     AVOID_DETECTOR_DECAY_PER_UPDATE = 0  # penalty strength is multiplied by this after each update; bigger = faster decay
     ACTIVITY_DECAY = 0.9  # 1.0 disables; try 0.95..0.995 to "forget" old spikes
+    NORMALIZE_ACTIVITY_TO_SIGNAL = True  # Rescale activity so predicted source counts match observed counts above background.
 
     # Localization metric.
     ACTIVITY_MAX_RELATIVE_DROP = 0.5
 
     # Visualization output.
-    UPDATE_FRAME_MAX_VOXELS = 500
+    PRINT_GENERATED_COUNTS_TABLE = True
+    UPDATE_FRAME_MAX_VOXELS = 700
     GIF_FPS = 1.0
     AXIS_LIMITS_3D = (
-        (-0.65, 0.85),
-        (-1.05, 0.40),
-        (-0.25, 0.85),
+        (-1, 1),
+        (-1, 1),
+        (-1, 1),
     )
 
     dataset = generate_synthetic_dataset(
@@ -234,12 +284,13 @@ def main():
         source_specs=TRUE_SOURCE_SPECS,
         num_channels=NUM_CHANNELS,
         diode_pitch=DIODE_PITCH,
-        background_mean=BACKGROUND_MEAN,
-        background_channel_std=BACKGROUND_CHANNEL_STD,
+        background_mean_per_second=BACKGROUND_MEAN_PER_SECOND,
+        background_channel_std_per_second=BACKGROUND_CHANNEL_STD_PER_SECOND,
         channel_scale_mean=CHANNEL_SCALE_MEAN,
         channel_scale_std=CHANNEL_SCALE_STD,
         generation_k=GENERATION_K,
-        peak_total_source_signal=PEAK_TOTAL_SOURCE_SIGNAL,
+        peak_total_source_signal_per_second=PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND,
+        measurement_duration_seconds=MEASUREMENT_DURATION_SECONDS,
         scan_center=SCAN_CENTER,
         trajectory_mode=TRAJECTORY_MODE,
         angular_jitter_deg=ANGULAR_JITTER_DEG,
@@ -257,11 +308,17 @@ def main():
     )
 
     print_dataset_summary(dataset)
+    if PRINT_GENERATED_COUNTS_TABLE:
+        print_generated_counts_table(dataset)
 
     num_channels = dataset["counts"].shape[1]
 
     assumed_model = {
-        "assumed_backgrounds": np.full(num_channels, ASSUMED_BACKGROUND_MEAN, dtype=float),
+        "assumed_backgrounds": np.full(
+            num_channels,
+            ASSUMED_BACKGROUND_MEAN_PER_SECOND * MEASUREMENT_DURATION_SECONDS,
+            dtype=float,
+        ),
         "assumed_channel_scales": np.full(num_channels, ASSUMED_CHANNEL_SCALE, dtype=float),
         "assumed_k": ASSUMED_K,
     }
@@ -285,6 +342,7 @@ def main():
         avoid_detector_strength=AVOID_DETECTOR_STRENGTH,
         avoid_detector_decay_per_update=AVOID_DETECTOR_DECAY_PER_UPDATE,
         activity_decay=ACTIVITY_DECAY,
+        normalize_activity_to_signal=NORMALIZE_ACTIVITY_TO_SIGNAL,
         localization_max_relative_drop=ACTIVITY_MAX_RELATIVE_DROP,
     )
     print_streaming_summary(result)
@@ -303,12 +361,13 @@ def main():
         "TRUE_SOURCE_SPECS": TRUE_SOURCE_SPECS,
         "NUM_CHANNELS": NUM_CHANNELS,
         "DIODE_PITCH": DIODE_PITCH,
-        "BACKGROUND_MEAN": BACKGROUND_MEAN,
-        "BACKGROUND_CHANNEL_STD": BACKGROUND_CHANNEL_STD,
+        "MEASUREMENT_DURATION_SECONDS": MEASUREMENT_DURATION_SECONDS,
+        "BACKGROUND_MEAN_PER_SECOND": BACKGROUND_MEAN_PER_SECOND,
+        "BACKGROUND_CHANNEL_STD_PER_SECOND": BACKGROUND_CHANNEL_STD_PER_SECOND,
         "CHANNEL_SCALE_MEAN": CHANNEL_SCALE_MEAN,
         "CHANNEL_SCALE_STD": CHANNEL_SCALE_STD,
         "GENERATION_K": GENERATION_K,
-        "PEAK_TOTAL_SOURCE_SIGNAL": PEAK_TOTAL_SOURCE_SIGNAL,
+        "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND,
         "SEARCH_MIN": SEARCH_MIN,
         "SEARCH_MAX": SEARCH_MAX,
         "GRID_SIZE": GRID_SIZE,
@@ -328,7 +387,7 @@ def main():
         "ORBIT_ANGLE_SPAN_DEG": ORBIT_ANGLE_SPAN_DEG,
         "ORBIT_START_ANGLE_DEG": ORBIT_START_ANGLE_DEG,
         "ORBIT_VERTICAL_SPAN": ORBIT_VERTICAL_SPAN,
-        "ASSUMED_BACKGROUND_MEAN": ASSUMED_BACKGROUND_MEAN,
+        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": ASSUMED_BACKGROUND_MEAN_PER_SECOND,
         "ASSUMED_CHANNEL_SCALE": ASSUMED_CHANNEL_SCALE,
         "ASSUMED_K": ASSUMED_K,
         "STREAMING_METHOD": STREAMING_METHOD,
@@ -340,7 +399,9 @@ def main():
         "AVOID_DETECTOR_STRENGTH": AVOID_DETECTOR_STRENGTH,
         "AVOID_DETECTOR_DECAY_PER_UPDATE": AVOID_DETECTOR_DECAY_PER_UPDATE,
         "ACTIVITY_DECAY": ACTIVITY_DECAY,
+        "NORMALIZE_ACTIVITY_TO_SIGNAL": NORMALIZE_ACTIVITY_TO_SIGNAL,
         "ACTIVITY_MAX_RELATIVE_DROP": ACTIVITY_MAX_RELATIVE_DROP,
+        "PRINT_GENERATED_COUNTS_TABLE": PRINT_GENERATED_COUNTS_TABLE,
         "UPDATE_FRAME_MAX_VOXELS": UPDATE_FRAME_MAX_VOXELS,
         "GIF_FPS": GIF_FPS,
         "AXIS_LIMITS_3D": AXIS_LIMITS_3D,

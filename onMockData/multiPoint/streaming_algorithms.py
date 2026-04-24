@@ -60,6 +60,7 @@ def reconstruct_sources(
     avoid_detector_strength=0.05,
     avoid_detector_decay_per_update=0.9,
     activity_decay=1.0,
+    normalize_activity_to_signal=False,
     store_activity_history=True,
     localization_max_relative_drop=0.25,
 ):
@@ -91,6 +92,7 @@ def reconstruct_sources(
             avoid_detector_strength=avoid_detector_strength,
             avoid_detector_decay_per_update=avoid_detector_decay_per_update,
             activity_decay=activity_decay,
+            normalize_activity_to_signal=normalize_activity_to_signal,
             store_activity_history=store_activity_history,
             true_sources=true_sources,
             localization_max_relative_drop=localization_max_relative_drop,
@@ -116,6 +118,7 @@ def reconstruct_sources(
             avoid_detector_strength=avoid_detector_strength,
             avoid_detector_decay_per_update=avoid_detector_decay_per_update,
             activity_decay=activity_decay,
+            normalize_activity_to_signal=normalize_activity_to_signal,
             store_activity_history=store_activity_history,
             true_sources=true_sources,
             localization_max_relative_drop=localization_max_relative_drop,
@@ -146,6 +149,7 @@ def streaming_mlem_reconstruction(
     avoid_detector_strength=0.05,
     avoid_detector_decay_per_update=0.9,
     activity_decay=1.0,
+    normalize_activity_to_signal=False,
     store_activity_history=True,
     localization_max_relative_drop=0.25,
 ):
@@ -235,6 +239,15 @@ def streaming_mlem_reconstruction(
         activity *= avoidance_weights
         activity = np.maximum(activity, EPS)
 
+        observed_signal = float(np.sum(np.maximum(counts_flat - backgrounds_flat, 0.0)))
+        predicted_signal = float(np.sum(system_matrix @ activity))
+        signal_normalization_scale = 1.0
+        if normalize_activity_to_signal and predicted_signal > EPS:
+            signal_normalization_scale = observed_signal / predicted_signal
+            activity *= signal_normalization_scale
+            activity = np.maximum(activity, EPS)
+            predicted_signal = float(np.sum(system_matrix @ activity))
+
         predicted_counts = predict_counts_from_activity(
             backgrounds_flat=backgrounds_flat,
             system_matrix=system_matrix,
@@ -263,6 +276,9 @@ def streaming_mlem_reconstruction(
             "best_activity": float(best_activity),
             "avoid_detector_decay": float(avoidance_decay),
             "avoid_detector_strength": float(current_avoidance_strength),
+            "observed_signal": float(observed_signal),
+            "predicted_signal": float(predicted_signal),
+            "signal_normalization_scale": float(signal_normalization_scale),
         }
         history_item["localization_metrics"] = summarize_activity_localization(
             voxel_positions=candidate_positions,
@@ -311,6 +327,7 @@ def streaming_incremental_mlem_reconstruction(
     avoid_detector_strength=0.05,
     avoid_detector_decay_per_update=0.9,
     activity_decay=1.0,
+    normalize_activity_to_signal=False,
     store_activity_history=True,
     localization_max_relative_drop=0.25,
 ):
@@ -405,6 +422,15 @@ def streaming_incremental_mlem_reconstruction(
         system_matrix_prefix = np.vstack(response_blocks)
         counts_prefix = np.concatenate(counts_blocks)
         backgrounds_prefix = np.concatenate(background_blocks)
+        observed_signal = float(np.sum(np.maximum(counts_prefix - backgrounds_prefix, 0.0)))
+        predicted_signal = float(np.sum(system_matrix_prefix @ activity))
+        signal_normalization_scale = 1.0
+        if normalize_activity_to_signal and predicted_signal > EPS:
+            signal_normalization_scale = observed_signal / predicted_signal
+            activity *= signal_normalization_scale
+            activity = np.maximum(activity, EPS)
+            predicted_signal = float(np.sum(system_matrix_prefix @ activity))
+
         predicted_prefix = predict_counts_from_activity(
             backgrounds_flat=backgrounds_prefix,
             system_matrix=system_matrix_prefix,
@@ -434,6 +460,9 @@ def streaming_incremental_mlem_reconstruction(
             "best_activity": float(best_activity),
             "avoid_detector_decay": float(avoidance_decay),
             "avoid_detector_strength": float(current_avoidance_strength),
+            "observed_signal": float(observed_signal),
+            "predicted_signal": float(predicted_signal),
+            "signal_normalization_scale": float(signal_normalization_scale),
         }
         history_item["localization_metrics"] = summarize_activity_localization(
             voxel_positions=candidate_positions,
