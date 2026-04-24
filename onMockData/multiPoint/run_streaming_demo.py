@@ -94,22 +94,24 @@ def main():
     SEED = 11
     NUM_MEASUREMENTS = 50
     TRUE_SOURCE_SPECS = [
-        {"position": (0.18, -0.12, 0.26), "relative_strength": 1.0},
-        {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
-        {"position": (0.34, -0.07, 0.38), "relative_strength": 0.45},
+        {"position": (0.18, -0.2, 0.15), "relative_strength": 1.0},
+        # {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
+        # {"position": (0.34, -0.07, 0.38), "relative_strength": 0.45},
     ]
     NUM_CHANNELS = 16
     DIODE_PITCH = 0.006
     BACKGROUND_MEAN = 1000.0
-    BACKGROUND_CHANNEL_STD = 50.0
+    BACKGROUND_CHANNEL_STD = 10.0
     CHANNEL_SCALE_MEAN = 1.0
     CHANNEL_SCALE_STD = 0.08
-    GENERATION_K = 4.5
+    GENERATION_K = 4.5  # >= 0; sensible ~0..10. Higher = narrower angular response, so off-axis sources give fewer counts.
     PEAK_TOTAL_SOURCE_SIGNAL = 5000.0
 
     # Mock detector trajectory.
     ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
+    FIXED_SWEEP_Z_DEG = 20.0
+    FIXED_SWEEP_X_DEG = -20.0
     SCAN_CENTER = None  # None means centroid of TRUE_SOURCE_SPECS
     ANGULAR_JITTER_DEG = 3.0
     LATERAL_SPAN = 0.60
@@ -123,27 +125,32 @@ def main():
     GRID_SIZE = 13
 
     # Assumed reconstruction model.
-    ASSUMED_BACKGROUND_MEAN = 1200.0
-    ASSUMED_CHANNEL_SCALE = 1.0
-    ASSUMED_K = 4.0
+    ASSUMED_BACKGROUND_MEAN = BACKGROUND_MEAN
+    ASSUMED_CHANNEL_SCALE = CHANNEL_SCALE_MEAN
+    ASSUMED_K = GENERATION_K
 
     # Streaming reconstruction algorithm.
     STREAMING_METHOD = "incremental_mlem"  # "prefix_mlem" or "incremental_mlem"
     RELAXATION = 1.0  # used by incremental_mlem; valid range: (0, 1]
     INNER_ITERATIONS_PER_UPDATE = 20
     MEASUREMENTS_PER_UPDATE = 2
-    MAX_SOURCES_TO_REPORT = 3
+    MAX_SOURCES_TO_REPORT = 1
     MIN_SOURCE_DISTANCE = 0.08
-    AVOID_DETECTOR_DISTANCE = 0.65  # [m] penalty radius around trajectory; try 0.25..0.50
-    AVOID_DETECTOR_POWER = 6.0  # higher => stronger push away from detector
+    AVOID_DETECTOR_STRENGTH = 0.5  # 0 disables; how much distance is penalized
+    AVOID_DETECTOR_DECAY_PER_UPDATE = 0.2  # penalty strength is multiplied by this after each update; bigger = faster decay
     ACTIVITY_DECAY = 0.98  # 1.0 disables; try 0.95..0.995 to "forget" old spikes
 
     # Localization metric.
     ACTIVITY_MAX_RELATIVE_DROP = 0.5
 
     # Visualization output.
-    UPDATE_FRAME_MAX_VOXELS = 100000
+    UPDATE_FRAME_MAX_VOXELS = 500
     GIF_FPS = 1.0
+    AXIS_LIMITS_3D = (
+        (-0.65, 0.85),
+        (-1.05, 0.40),
+        (-0.25, 0.85),
+    )
 
     dataset = generate_synthetic_dataset(
         num_measurements=NUM_MEASUREMENTS,
@@ -165,6 +172,8 @@ def main():
         vertical_span=VERTICAL_SPAN,
         base_distance=BASE_DISTANCE,
         distance_span=DISTANCE_SPAN,
+        fixed_sweep_z_deg=FIXED_SWEEP_Z_DEG,
+        fixed_sweep_x_deg=FIXED_SWEEP_X_DEG,
     )
 
     print_dataset_summary(dataset)
@@ -193,8 +202,8 @@ def main():
         max_sources=MAX_SOURCES_TO_REPORT,
         min_source_distance=MIN_SOURCE_DISTANCE,
         relaxation=RELAXATION,
-        avoid_detector_distance=AVOID_DETECTOR_DISTANCE,
-        avoid_detector_power=AVOID_DETECTOR_POWER,
+        avoid_detector_strength=AVOID_DETECTOR_STRENGTH,
+        avoid_detector_decay_per_update=AVOID_DETECTOR_DECAY_PER_UPDATE,
         activity_decay=ACTIVITY_DECAY,
         localization_max_relative_drop=ACTIVITY_MAX_RELATIVE_DROP,
     )
@@ -210,6 +219,7 @@ def main():
         dataset,
         save_path=output_dir / "multi_source_scene_streaming.png",
         show=False,
+        axis_limits=AXIS_LIMITS_3D,
     )
     visualize_mlem_activity(
         dataset,
@@ -219,6 +229,7 @@ def main():
         used_measurements=len(dataset["translations"]),
         save_path=output_dir / "streaming_mlem_activity_reconstruction.png",
         show=False,
+        axis_limits=AXIS_LIMITS_3D,
     )
     visualize_history_score(
         result["stream_history"],
@@ -260,6 +271,7 @@ def main():
             save_path=updates_3d_dir / f"update_{update_index:03d}.png",
             show=False,
             max_voxels=UPDATE_FRAME_MAX_VOXELS,
+            axis_limits=AXIS_LIMITS_3D,
         )
         previous_used_measurements = used_measurements
 

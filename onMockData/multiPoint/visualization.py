@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from common.geometry import EPS
-from common.visualization import finalize_figure, set_equal_3d_axes
+from common.visualization import finalize_figure, set_3d_axis_limits, set_equal_3d_axes
 
 
 def plot_detector_forward_directions(
@@ -54,7 +54,7 @@ def plot_detector_forward_directions(
     )
 
 
-def visualize_multi_source_scene(dataset, save_path=None, show=False):
+def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limits=None):
     """Show detector trajectory and all true point sources in world coordinates."""
     import matplotlib.pyplot as plt
 
@@ -122,7 +122,10 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False):
         )
 
     points_for_scale = np.vstack([translations, source_positions])
-    set_equal_3d_axes(ax, points_for_scale)
+    if axis_limits is None:
+        set_equal_3d_axes(ax, points_for_scale)
+    else:
+        set_3d_axis_limits(ax, axis_limits)
 
     ax.set_title("Multi-point source scene")
     ax.set_xlabel("x world [m]")
@@ -144,6 +147,7 @@ def visualize_mlem_activity(
     save_path=None,
     show=False,
     max_voxels=300,
+    axis_limits=None,
 ):
     """Show the strongest voxels from an ML-EM activity reconstruction."""
     import matplotlib.pyplot as plt
@@ -288,7 +292,10 @@ def visualize_mlem_activity(
         )
         points_for_scale.append(estimated_positions)
 
-    set_equal_3d_axes(ax, np.vstack(points_for_scale))
+    if axis_limits is None:
+        set_equal_3d_axes(ax, np.vstack(points_for_scale))
+    else:
+        set_3d_axis_limits(ax, axis_limits)
 
     ax.set_title("ML-EM activity reconstruction")
     ax.set_xlabel("x world [m]")

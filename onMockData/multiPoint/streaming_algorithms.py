@@ -14,25 +14,18 @@ from reconstruction_objective import (
 )
 
 
-def compute_detector_avoidance_weights(
+def compute_detector_distance_penalty(
     candidate_positions,
     detector_positions,
-    avoid_distance,
-    power=2.0,
 ):
     """
-    Return per-voxel weights in (0, 1] that penalize voxels too close to the detector.
+    Return per-voxel penalty in [0, 1] based only on distance to detector path.
 
-    weight ~= 0 when voxel is at distance 0 from any detector position
-    weight == 1 when voxel is farther than avoid_distance from all detector positions
+    penalty == 1 for voxels closest to the detector trajectory
+    penalty == 0 for voxels farthest from the detector trajectory seen so far
     """
-    avoid_distance = float(avoid_distance)
-    power = float(power)
-
-    if avoid_distance <= 0.0:
-        return np.ones(len(candidate_positions), dtype=float)
     if detector_positions is None or len(detector_positions) == 0:
-        raise ValueError("Detector positions must be provided when avoid_distance > 0.")
+        raise ValueError("Detector positions must be provided for detector distance penalty.")
 
     candidate_positions = np.asarray(candidate_positions, dtype=float)
     detector_positions = np.asarray(detector_positions, dtype=float)
@@ -41,9 +34,9 @@ def compute_detector_avoidance_weights(
     distances = np.sqrt(np.sum(diffs * diffs, axis=2))
     min_distance = np.min(distances, axis=1)
 
-    fraction = np.minimum(1.0, np.maximum(min_distance / avoid_distance, 0.0))
-    weights = fraction**power
-    return np.maximum(weights, EPS)
+    farthest_distance = max(float(np.max(min_distance)), EPS)
+    fraction = np.maximum(min_distance / farthest_distance, 0.0)
+    return np.clip(1.0 - fraction, 0.0, 1.0)
 
 
 def reconstruct_sources(
@@ -64,8 +57,8 @@ def reconstruct_sources(
     max_sources=3,
     min_source_distance=0.08,
     relaxation=1.0,
-    avoid_detector_distance=0.0,
-    avoid_detector_power=2.0,
+    avoid_detector_strength=0.05,
+    avoid_detector_decay_per_update=0.9,
     activity_decay=1.0,
     store_activity_history=True,
     localization_max_relative_drop=0.25,
@@ -95,8 +88,8 @@ def reconstruct_sources(
             measurements_per_update=measurements_per_update,
             max_sources=max_sources,
             min_source_distance=min_source_distance,
-            avoid_detector_distance=avoid_detector_distance,
-            avoid_detector_power=avoid_detector_power,
+            avoid_detector_strength=avoid_detector_strength,
+            avoid_detector_decay_per_update=avoid_detector_decay_per_update,
             activity_decay=activity_decay,
             store_activity_history=store_activity_history,
             true_sources=true_sources,
@@ -120,8 +113,8 @@ def reconstruct_sources(
             max_sources=max_sources,
             min_source_distance=min_source_distance,
             relaxation=relaxation,
-            avoid_detector_distance=avoid_detector_distance,
-            avoid_detector_power=avoid_detector_power,
+            avoid_detector_strength=avoid_detector_strength,
+            avoid_detector_decay_per_update=avoid_detector_decay_per_update,
             activity_decay=activity_decay,
             store_activity_history=store_activity_history,
             true_sources=true_sources,
@@ -150,8 +143,8 @@ def streaming_mlem_reconstruction(
     measurements_per_update=1,
     max_sources=3,
     min_source_distance=0.08,
-    avoid_detector_distance=0.0,
-    avoid_detector_power=2.0,
+    avoid_detector_strength=0.05,
+    avoid_detector_decay_per_update=0.9,
     activity_decay=1.0,
     store_activity_history=True,
     localization_max_relative_drop=0.25,
@@ -164,6 +157,12 @@ def streaming_mlem_reconstruction(
     """
     num_measurements, num_channels = counts.shape
     chunk_size = max(1, int(measurements_per_update))
+    avoid_detector_strength = float(avoid_detector_strength)
+    avoid_detector_decay_per_update = float(avoid_detector_decay_per_update)
+    if not 0.0 <= avoid_detector_strength <= 1.0:
+        raise ValueError("avoid_detector_strength must be in the range [0, 1].")
+    if not 0.0 <= avoid_detector_decay_per_update <= 1.0:
+        raise ValueError("avoid_detector_decay_per_update must be in the range [0, 1].")
 
     candidate_positions = make_candidate_grid(
         search_min=search_min,
@@ -204,12 +203,14 @@ def streaming_mlem_reconstruction(
         backgrounds_flat = np.concatenate(background_blocks)
         sensitivity = np.sum(system_matrix, axis=0)
 
-        avoidance_weights = compute_detector_avoidance_weights(
+        distance_penalty = compute_detector_distance_penalty(
             candidate_positions=candidate_positions,
             detector_positions=translations[:end_index],
-            avoid_distance=avoid_detector_distance,
-            power=avoid_detector_power,
         )
+        avoidance_decay = avoid_detector_decay_per_update ** len(stream_history)
+        current_avoidance_strength = avoid_detector_strength * avoidance_decay
+        avoidance_weights = 1.0 - current_avoidance_strength * distance_penalty
+        avoidance_weights = np.maximum(avoidance_weights, EPS)
 
         if start_index > 0 and float(activity_decay) < 1.0:
             activity *= float(activity_decay)
@@ -229,8 +230,10 @@ def streaming_mlem_reconstruction(
             ratio = counts_flat / np.maximum(predicted_counts, EPS)
             correction = (system_matrix.T @ ratio) / np.maximum(sensitivity, EPS)
             activity *= correction
-            activity *= avoidance_weights
             activity = np.maximum(activity, EPS)
+
+        activity *= avoidance_weights
+        activity = np.maximum(activity, EPS)
 
         predicted_counts = predict_counts_from_activity(
             backgrounds_flat=backgrounds_flat,
@@ -258,6 +261,8 @@ def streaming_mlem_reconstruction(
             "max_activity": float(np.max(activity)),
             "best_position": best_position,
             "best_activity": float(best_activity),
+            "avoid_detector_decay": float(avoidance_decay),
+            "avoid_detector_strength": float(current_avoidance_strength),
         }
         history_item["localization_metrics"] = summarize_activity_localization(
             voxel_positions=candidate_positions,
@@ -303,8 +308,8 @@ def streaming_incremental_mlem_reconstruction(
     max_sources=3,
     min_source_distance=0.08,
     relaxation=1.0,
-    avoid_detector_distance=0.0,
-    avoid_detector_power=2.0,
+    avoid_detector_strength=0.05,
+    avoid_detector_decay_per_update=0.9,
     activity_decay=1.0,
     store_activity_history=True,
     localization_max_relative_drop=0.25,
@@ -321,6 +326,12 @@ def streaming_incremental_mlem_reconstruction(
     relaxation = float(relaxation)
     if not 0.0 < relaxation <= 1.0:
         raise ValueError("relaxation must be in the range (0, 1].")
+    avoid_detector_strength = float(avoid_detector_strength)
+    avoid_detector_decay_per_update = float(avoid_detector_decay_per_update)
+    if not 0.0 <= avoid_detector_strength <= 1.0:
+        raise ValueError("avoid_detector_strength must be in the range [0, 1].")
+    if not 0.0 <= avoid_detector_decay_per_update <= 1.0:
+        raise ValueError("avoid_detector_decay_per_update must be in the range [0, 1].")
 
     candidate_positions = make_candidate_grid(
         search_min=search_min,
@@ -357,12 +368,14 @@ def streaming_incremental_mlem_reconstruction(
         background_blocks.append(backgrounds_block)
 
         sensitivity_block = np.sum(response_block, axis=0)
-        avoidance_weights = compute_detector_avoidance_weights(
+        distance_penalty = compute_detector_distance_penalty(
             candidate_positions=candidate_positions,
             detector_positions=translations[:end_index],
-            avoid_distance=avoid_detector_distance,
-            power=avoid_detector_power,
         )
+        avoidance_decay = avoid_detector_decay_per_update ** len(stream_history)
+        current_avoidance_strength = avoid_detector_strength * avoidance_decay
+        avoidance_weights = 1.0 - current_avoidance_strength * distance_penalty
+        avoidance_weights = np.maximum(avoidance_weights, EPS)
 
         if start_index > 0 and float(activity_decay) < 1.0:
             activity *= float(activity_decay)
@@ -384,8 +397,10 @@ def streaming_incremental_mlem_reconstruction(
             correction = np.maximum(correction, EPS)
             correction = correction ** relaxation
             activity *= correction
-            activity *= avoidance_weights
             activity = np.maximum(activity, EPS)
+
+        activity *= avoidance_weights
+        activity = np.maximum(activity, EPS)
 
         system_matrix_prefix = np.vstack(response_blocks)
         counts_prefix = np.concatenate(counts_blocks)
@@ -417,6 +432,8 @@ def streaming_incremental_mlem_reconstruction(
             "max_activity": float(np.max(activity)),
             "best_position": best_position,
             "best_activity": float(best_activity),
+            "avoid_detector_decay": float(avoidance_decay),
+            "avoid_detector_strength": float(current_avoidance_strength),
         }
         history_item["localization_metrics"] = summarize_activity_localization(
             voxel_positions=candidate_positions,

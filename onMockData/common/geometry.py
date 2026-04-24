@@ -113,6 +113,8 @@ def make_detector_trajectory(
     distance_span=0.18,
     orientation_mode="fixed",
     fixed_view_direction=None,
+    fixed_sweep_z_deg=0.0,
+    fixed_sweep_x_deg=0.0,
 ):
     """
     Generate a one-sided scan trajectory for the detector.
@@ -191,7 +193,15 @@ def make_detector_trajectory(
                 local_forward=geometry["detector_forward_local"],
             )
         else:
-            rotation = base_rotation
+            z_fraction = 2.0 * column_fraction - 1.0
+            x_fraction = 0.0 if num_rows == 1 else 2.0 * row / (num_rows - 1) - 1.0
+            z_angle = math.radians(float(fixed_sweep_z_deg)) * z_fraction
+            x_angle = math.radians(float(fixed_sweep_x_deg)) * x_fraction
+            sweep_rotation = (
+                axis_angle_rotation(vertical_axis, z_angle)
+                @ axis_angle_rotation(lateral_axis, x_angle)
+            )
+            rotation = sweep_rotation @ base_rotation
 
         # Small orientation mismatch to make the generated data a bit more realistic.
         jitter_axis = normalize(rng.normal(size=3))

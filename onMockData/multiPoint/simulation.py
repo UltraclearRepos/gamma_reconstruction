@@ -54,6 +54,8 @@ def generate_synthetic_dataset(
     vertical_span,
     base_distance,
     distance_span,
+    fixed_sweep_z_deg,
+    fixed_sweep_x_deg,
 ):
     """
     Generate one synthetic multi-source experiment.
@@ -111,6 +113,8 @@ def generate_synthetic_dataset(
         distance_span=distance_span,
         orientation_mode=orientation_mode,
         fixed_view_direction=fixed_view_direction,
+        fixed_sweep_z_deg=fixed_sweep_z_deg,
+        fixed_sweep_x_deg=fixed_sweep_x_deg,
     )
 
     unit_sources = [

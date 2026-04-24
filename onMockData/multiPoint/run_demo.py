@@ -106,6 +106,8 @@ def main():
     PEAK_TOTAL_SOURCE_SIGNAL = 5000.0
     ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
+    FIXED_SWEEP_Z_DEG = 10.0
+    FIXED_SWEEP_X_DEG = 6.0
     SCAN_CENTER = None
     ANGULAR_JITTER_DEG = 3.0
     LATERAL_SPAN = 0.60
@@ -133,6 +135,8 @@ def main():
         vertical_span=VERTICAL_SPAN,
         base_distance=BASE_DISTANCE,
         distance_span=DISTANCE_SPAN,
+        fixed_sweep_z_deg=FIXED_SWEEP_Z_DEG,
+        fixed_sweep_x_deg=FIXED_SWEEP_X_DEG,
     )
     print_summary(dataset)
 

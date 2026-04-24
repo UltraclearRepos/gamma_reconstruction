@@ -30,6 +30,14 @@ def set_equal_3d_axes(ax, points, margin=0.15):
     ax.set_zlim(center[2] - half_range, center[2] + half_range)
 
 
+def set_3d_axis_limits(ax, axis_limits):
+    """Set fixed 3D axis limits from ((xmin, xmax), (ymin, ymax), (zmin, zmax))."""
+    x_limits, y_limits, z_limits = axis_limits
+    ax.set_xlim(*x_limits)
+    ax.set_ylim(*y_limits)
+    ax.set_zlim(*z_limits)
+
+
 def finalize_figure(fig, save_path=None, show=False):
     """Save figure to file and optionally display it."""
     if save_path is not None:
