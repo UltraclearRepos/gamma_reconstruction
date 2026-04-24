@@ -148,6 +148,8 @@ def visualize_mlem_activity(
     show=False,
     max_voxels=300,
     axis_limits=None,
+    activity_color_limits=None,
+    activity_size_reference=None,
 ):
     """Show the strongest voxels from an ML-EM activity reconstruction."""
     import matplotlib.pyplot as plt
@@ -170,19 +172,29 @@ def visualize_mlem_activity(
         voxel_positions = candidate_positions[strongest_indices]
         voxel_activity = activity[strongest_indices]
 
-        normalized_activity = voxel_activity / max(float(np.max(voxel_activity)), EPS)
+        if activity_size_reference is None:
+            size_reference = float(np.max(voxel_activity))
+        else:
+            size_reference = float(activity_size_reference)
+        normalized_activity = np.clip(voxel_activity / max(size_reference, EPS), 0.0, 1.0)
         voxel_sizes = 10.0 + 50.0 * normalized_activity
+        color_values = np.log1p(voxel_activity)
+        scatter_kwargs = {}
+        if activity_color_limits is not None:
+            scatter_kwargs["vmin"] = float(activity_color_limits[0])
+            scatter_kwargs["vmax"] = float(activity_color_limits[1])
 
         scatter = ax.scatter(
             voxel_positions[:, 0],
             voxel_positions[:, 1],
             voxel_positions[:, 2],
-            c=np.log1p(voxel_activity),
+            c=color_values,
             s=voxel_sizes,
             cmap="inferno",
             alpha=0.30,
             depthshade=False,
             label="reconstructed activity",
+            **scatter_kwargs,
         )
         colorbar = fig.colorbar(scatter, ax=ax, shrink=0.75)
         colorbar.set_label("log(1 + activity)")

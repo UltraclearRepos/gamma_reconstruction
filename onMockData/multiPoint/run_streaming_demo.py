@@ -2,6 +2,9 @@
 Entrypoint for streaming ML-EM reconstruction on synthetic multi-point data.
 """
 
+import csv
+from datetime import datetime
+import json
 from pathlib import Path
 import sys
 
@@ -29,6 +32,9 @@ def print_dataset_summary(dataset):
     """Print short summary for the generated multi-point dataset."""
     counts = dataset["counts"]
     print("=== Streaming multi-point source demo ===")
+    print()
+    print("Scan center:")
+    print(dataset["scan_center"])
     print()
     print("True sources:")
     for index, source in enumerate(dataset["true_sources"], start=1):
@@ -89,12 +95,74 @@ def print_streaming_localization_metrics(history):
         )
 
 
+def to_builtin_value(value):
+    """Convert numpy values nested in lists/dicts into plain Python values."""
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (list, tuple)):
+        return [to_builtin_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: to_builtin_value(item) for key, item in value.items()}
+    return value
+
+
+def to_csv_value(value):
+    """Convert numpy and structured values into CSV-friendly scalars/JSON."""
+    value = to_builtin_value(value)
+    if isinstance(value, (list, tuple, dict)):
+        return json.dumps(value)
+    return value
+
+
+def append_streaming_run_csv(csv_path, parameters, final_history_item):
+    """Append run parameters and final localization metrics to a growing CSV."""
+    metrics = final_history_item["localization_metrics"]
+    metric_keys = [
+        "selected_voxel_count",
+        "total_voxel_count",
+        "max_activity",
+        "activity_threshold",
+        "selected_activity_fraction",
+        "all_source_distance_min",
+        "all_source_distance_weighted_mean",
+        "all_source_distance_median",
+        "all_source_distance_p90",
+        "all_source_distance_max",
+    ]
+
+    row = {
+        "run_timestamp": datetime.now().isoformat(timespec="seconds"),
+        "final_update_index": int(final_history_item["update_index"]),
+        "final_used_measurements": int(final_history_item["used_measurements"]),
+        "final_score": float(final_history_item["score"]),
+        "final_total_activity": float(final_history_item["total_activity"]),
+        "final_max_activity": float(final_history_item["max_activity"]),
+        "final_best_activity": float(final_history_item["best_activity"]),
+        "metric_selection": metrics["selection"],
+        "metric_per_source_distances": to_csv_value(metrics["per_source_distances"]),
+    }
+    for key, value in parameters.items():
+        row[f"param_{key.lower()}"] = to_csv_value(value)
+    for key in metric_keys:
+        row[f"metric_{key}"] = to_csv_value(metrics[key])
+
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not csv_path.exists() or csv_path.stat().st_size == 0
+    with csv_path.open("a", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=list(row.keys()))
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
 def main():
     # Mock data generation.
     SEED = 11
     NUM_MEASUREMENTS = 50
     TRUE_SOURCE_SPECS = [
-        {"position": (0.18, -0.2, 0.15), "relative_strength": 1.0},
+        {"position": (0.18, -0.2, 0.2), "relative_strength": 1.0},
         # {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
         # {"position": (0.34, -0.07, 0.38), "relative_strength": 0.45},
     ]
@@ -107,22 +175,28 @@ def main():
     GENERATION_K = 4.5  # >= 0; sensible ~0..10. Higher = narrower angular response, so off-axis sources give fewer counts.
     PEAK_TOTAL_SOURCE_SIGNAL = 5000.0
 
-    # Mock detector trajectory.
-    ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
-    FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
-    FIXED_SWEEP_Z_DEG = 20.0
-    FIXED_SWEEP_X_DEG = -20.0
-    SCAN_CENTER = None  # None means centroid of TRUE_SOURCE_SPECS
-    ANGULAR_JITTER_DEG = 3.0
-    LATERAL_SPAN = 0.60
-    VERTICAL_SPAN = 0.36
-    BASE_DISTANCE = 0.65
-    DISTANCE_SPAN = 0.18
-
     # Reconstruction volume.
     SEARCH_MIN = (-0.55, -0.65, -0.15)
     SEARCH_MAX = (0.75, 0.35, 0.75)
     GRID_SIZE = 13
+
+    # Mock detector trajectory.
+    TRAJECTORY_MODE = "around_center"  # "grid_scan" or "around_center"
+    ORIENTATION_MODE = "towards_target"  # "fixed" or "towards_target" | "towards_target" recommended for TRAJECTORY_MODE="around_center"
+    FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
+    FIXED_SWEEP_Z_DEG = 20.0  # fixed mode only: left/right viewing sweep around world Z axis.
+    FIXED_SWEEP_X_DEG = -20.0  # fixed mode only: up/down viewing sweep around world X axis.
+    SCAN_CENTER = tuple((np.array(SEARCH_MIN) + np.array(SEARCH_MAX)) / 2.0)  # Center of scan path; should match reconstruction volume center.
+    ANGULAR_JITTER_DEG = 3.0  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
+    LATERAL_SPAN = 0.60  # grid_scan only: max left/right position offset from SCAN_CENTER [m].
+    VERTICAL_SPAN = 0.36  # grid_scan only: max up/down position offset from SCAN_CENTER [m].
+    BASE_DISTANCE = 0.65  # grid_scan only: nominal detector distance from SCAN_CENTER [m].
+    DISTANCE_SPAN = 0.18  # grid_scan only: sinusoidal variation of detector distance [m].
+    ORBIT_RADIUS = 0.8  # around_center only: nominal radius of detector orbit around SCAN_CENTER [m].
+    ORBIT_RADIUS_SPAN = 0.2  # around_center only: sinusoidal radius variation during orbit [m].
+    ORBIT_ANGLE_SPAN_DEG = 360.0  # around_center only: covered orbit angle; 360 means full circle.
+    ORBIT_START_ANGLE_DEG = 0.0  # around_center only: starting angle of orbit in XY plane.
+    ORBIT_VERTICAL_SPAN = 0.2  # around_center only: sinusoidal up/down motion during orbit [m].
 
     # Assumed reconstruction model.
     ASSUMED_BACKGROUND_MEAN = BACKGROUND_MEAN
@@ -131,14 +205,14 @@ def main():
 
     # Streaming reconstruction algorithm.
     STREAMING_METHOD = "incremental_mlem"  # "prefix_mlem" or "incremental_mlem"
-    RELAXATION = 1.0  # used by incremental_mlem; valid range: (0, 1]
+    RELAXATION = 0.6  # used by incremental_mlem; valid range: (0, 1];  1.0 = no relaxation (standard MLEM); smaller = more conservative updates
     INNER_ITERATIONS_PER_UPDATE = 20
     MEASUREMENTS_PER_UPDATE = 2
     MAX_SOURCES_TO_REPORT = 1
     MIN_SOURCE_DISTANCE = 0.08
-    AVOID_DETECTOR_STRENGTH = 0.5  # 0 disables; how much distance is penalized
-    AVOID_DETECTOR_DECAY_PER_UPDATE = 0.2  # penalty strength is multiplied by this after each update; bigger = faster decay
-    ACTIVITY_DECAY = 0.98  # 1.0 disables; try 0.95..0.995 to "forget" old spikes
+    AVOID_DETECTOR_STRENGTH = 0  # 0 disables; how much distance is penalized
+    AVOID_DETECTOR_DECAY_PER_UPDATE = 0  # penalty strength is multiplied by this after each update; bigger = faster decay
+    ACTIVITY_DECAY = 0.9  # 1.0 disables; try 0.95..0.995 to "forget" old spikes
 
     # Localization metric.
     ACTIVITY_MAX_RELATIVE_DROP = 0.5
@@ -167,11 +241,17 @@ def main():
         generation_k=GENERATION_K,
         peak_total_source_signal=PEAK_TOTAL_SOURCE_SIGNAL,
         scan_center=SCAN_CENTER,
+        trajectory_mode=TRAJECTORY_MODE,
         angular_jitter_deg=ANGULAR_JITTER_DEG,
         lateral_span=LATERAL_SPAN,
         vertical_span=VERTICAL_SPAN,
         base_distance=BASE_DISTANCE,
         distance_span=DISTANCE_SPAN,
+        orbit_radius=ORBIT_RADIUS,
+        orbit_radius_span=ORBIT_RADIUS_SPAN,
+        orbit_angle_span_deg=ORBIT_ANGLE_SPAN_DEG,
+        orbit_start_angle_deg=ORBIT_START_ANGLE_DEG,
+        orbit_vertical_span=ORBIT_VERTICAL_SPAN,
         fixed_sweep_z_deg=FIXED_SWEEP_Z_DEG,
         fixed_sweep_x_deg=FIXED_SWEEP_X_DEG,
     )
@@ -210,8 +290,67 @@ def main():
     print_streaming_summary(result)
     print_streaming_localization_metrics(result["stream_history"])
     print_activity_localization_summary(result["stream_history"][-1]["localization_metrics"])
+    max_activity_for_visualization = max(
+        float(np.max(activity_snapshot))
+        for activity_snapshot in result["activity_history"]
+    )
+    ACTIVITY_COLOR_LIMITS = (0.0, float(np.log1p(max(max_activity_for_visualization, 0.0))))
 
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
+    run_parameters = {
+        "SEED": SEED,
+        "NUM_MEASUREMENTS": NUM_MEASUREMENTS,
+        "TRUE_SOURCE_SPECS": TRUE_SOURCE_SPECS,
+        "NUM_CHANNELS": NUM_CHANNELS,
+        "DIODE_PITCH": DIODE_PITCH,
+        "BACKGROUND_MEAN": BACKGROUND_MEAN,
+        "BACKGROUND_CHANNEL_STD": BACKGROUND_CHANNEL_STD,
+        "CHANNEL_SCALE_MEAN": CHANNEL_SCALE_MEAN,
+        "CHANNEL_SCALE_STD": CHANNEL_SCALE_STD,
+        "GENERATION_K": GENERATION_K,
+        "PEAK_TOTAL_SOURCE_SIGNAL": PEAK_TOTAL_SOURCE_SIGNAL,
+        "SEARCH_MIN": SEARCH_MIN,
+        "SEARCH_MAX": SEARCH_MAX,
+        "GRID_SIZE": GRID_SIZE,
+        "TRAJECTORY_MODE": TRAJECTORY_MODE,
+        "ORIENTATION_MODE": ORIENTATION_MODE,
+        "FIXED_VIEW_DIRECTION": FIXED_VIEW_DIRECTION,
+        "FIXED_SWEEP_Z_DEG": FIXED_SWEEP_Z_DEG,
+        "FIXED_SWEEP_X_DEG": FIXED_SWEEP_X_DEG,
+        "SCAN_CENTER": SCAN_CENTER,
+        "ANGULAR_JITTER_DEG": ANGULAR_JITTER_DEG,
+        "LATERAL_SPAN": LATERAL_SPAN,
+        "VERTICAL_SPAN": VERTICAL_SPAN,
+        "BASE_DISTANCE": BASE_DISTANCE,
+        "DISTANCE_SPAN": DISTANCE_SPAN,
+        "ORBIT_RADIUS": ORBIT_RADIUS,
+        "ORBIT_RADIUS_SPAN": ORBIT_RADIUS_SPAN,
+        "ORBIT_ANGLE_SPAN_DEG": ORBIT_ANGLE_SPAN_DEG,
+        "ORBIT_START_ANGLE_DEG": ORBIT_START_ANGLE_DEG,
+        "ORBIT_VERTICAL_SPAN": ORBIT_VERTICAL_SPAN,
+        "ASSUMED_BACKGROUND_MEAN": ASSUMED_BACKGROUND_MEAN,
+        "ASSUMED_CHANNEL_SCALE": ASSUMED_CHANNEL_SCALE,
+        "ASSUMED_K": ASSUMED_K,
+        "STREAMING_METHOD": STREAMING_METHOD,
+        "RELAXATION": RELAXATION,
+        "INNER_ITERATIONS_PER_UPDATE": INNER_ITERATIONS_PER_UPDATE,
+        "MEASUREMENTS_PER_UPDATE": MEASUREMENTS_PER_UPDATE,
+        "MAX_SOURCES_TO_REPORT": MAX_SOURCES_TO_REPORT,
+        "MIN_SOURCE_DISTANCE": MIN_SOURCE_DISTANCE,
+        "AVOID_DETECTOR_STRENGTH": AVOID_DETECTOR_STRENGTH,
+        "AVOID_DETECTOR_DECAY_PER_UPDATE": AVOID_DETECTOR_DECAY_PER_UPDATE,
+        "ACTIVITY_DECAY": ACTIVITY_DECAY,
+        "ACTIVITY_MAX_RELATIVE_DROP": ACTIVITY_MAX_RELATIVE_DROP,
+        "UPDATE_FRAME_MAX_VOXELS": UPDATE_FRAME_MAX_VOXELS,
+        "GIF_FPS": GIF_FPS,
+        "AXIS_LIMITS_3D": AXIS_LIMITS_3D,
+    }
+    STREAMING_RUNS_CSV = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations" / "streaming_runs.csv"
+    append_streaming_run_csv(
+        csv_path=STREAMING_RUNS_CSV,
+        parameters=run_parameters,
+        final_history_item=result["stream_history"][-1],
+    )
     updates_3d_dir = output_dir / "streaming_activity_updates_3d"
     updates_3d_dir.mkdir(parents=True, exist_ok=True)
 
@@ -230,6 +369,8 @@ def main():
         save_path=output_dir / "streaming_mlem_activity_reconstruction.png",
         show=False,
         axis_limits=AXIS_LIMITS_3D,
+        activity_color_limits=ACTIVITY_COLOR_LIMITS,
+        activity_size_reference=max_activity_for_visualization,
     )
     visualize_history_score(
         result["stream_history"],
@@ -272,6 +413,8 @@ def main():
             show=False,
             max_voxels=UPDATE_FRAME_MAX_VOXELS,
             axis_limits=AXIS_LIMITS_3D,
+            activity_color_limits=ACTIVITY_COLOR_LIMITS,
+            activity_size_reference=max_activity_for_visualization,
         )
         previous_used_measurements = used_measurements
 
@@ -289,6 +432,7 @@ def main():
     print(" ", output_dir / "streaming_mlem_score_history.png")
     print(" ", output_dir / "streaming_best_position_history.png")
     print(" ", output_dir / "streaming_localization_metric_history.png")
+    print(" ", STREAMING_RUNS_CSV)
     print(" ", updates_3d_dir / "update_001.png ...")
     print(" ", updates_gif_path)
 

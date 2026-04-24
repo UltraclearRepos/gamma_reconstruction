@@ -104,16 +104,29 @@ def main():
     CHANNEL_SCALE_STD = 0.08
     GENERATION_K = 4.5
     PEAK_TOTAL_SOURCE_SIGNAL = 5000.0
+
+    # Reconstruction volume. With one-sided detector scans, this range matters a lot:
+    # if it includes regions close to the detector, ML-EM may place activity there
+    # because depth is weakly constrained.
+    search_min = (-0.55, -0.65, -0.15)
+    search_max = (0.75, 0.35, 0.75)
+
+    TRAJECTORY_MODE = "grid_scan"  # "grid_scan" or "around_center"
     ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
     FIXED_SWEEP_Z_DEG = 10.0
     FIXED_SWEEP_X_DEG = 6.0
-    SCAN_CENTER = None
+    SCAN_CENTER = tuple((np.array(search_min) + np.array(search_max)) / 2.0)
     ANGULAR_JITTER_DEG = 3.0
     LATERAL_SPAN = 0.60
     VERTICAL_SPAN = 0.36
     BASE_DISTANCE = 0.65
     DISTANCE_SPAN = 0.18
+    ORBIT_RADIUS = 0.65
+    ORBIT_RADIUS_SPAN = 0.08
+    ORBIT_ANGLE_SPAN_DEG = 360.0
+    ORBIT_START_ANGLE_DEG = 0.0
+    ORBIT_VERTICAL_SPAN = 0.18
 
     dataset = generate_synthetic_dataset(
         num_measurements=NUM_MEASUREMENTS,
@@ -130,23 +143,23 @@ def main():
         generation_k=GENERATION_K,
         peak_total_source_signal=PEAK_TOTAL_SOURCE_SIGNAL,
         scan_center=SCAN_CENTER,
+        trajectory_mode=TRAJECTORY_MODE,
         angular_jitter_deg=ANGULAR_JITTER_DEG,
         lateral_span=LATERAL_SPAN,
         vertical_span=VERTICAL_SPAN,
         base_distance=BASE_DISTANCE,
         distance_span=DISTANCE_SPAN,
+        orbit_radius=ORBIT_RADIUS,
+        orbit_radius_span=ORBIT_RADIUS_SPAN,
+        orbit_angle_span_deg=ORBIT_ANGLE_SPAN_DEG,
+        orbit_start_angle_deg=ORBIT_START_ANGLE_DEG,
+        orbit_vertical_span=ORBIT_VERTICAL_SPAN,
         fixed_sweep_z_deg=FIXED_SWEEP_Z_DEG,
         fixed_sweep_x_deg=FIXED_SWEEP_X_DEG,
     )
     print_summary(dataset)
 
     num_channels = dataset["counts"].shape[1]
-
-    # Reconstruction volume. With one-sided detector scans, this range matters a lot:
-    # if it includes regions close to the detector, ML-EM may place activity there
-    # because depth is weakly constrained.
-    search_min = (-0.55, -0.65, -0.15)
-    search_max = (0.75, 0.35, 0.75)
 
     ASSUMED_BACKGROUND_MEAN = 1000
     ASSUMED_CHANNEL_SCALE = 1.0

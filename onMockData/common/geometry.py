@@ -103,25 +103,34 @@ def make_detector_geometry(num_channels=16, diode_pitch=0.006):
 
 def make_detector_trajectory(
     geometry,
-    source_position,
+    scan_center,
     num_measurements,
     rng,
+    trajectory_mode="grid_scan",
     angular_jitter_deg=2.0,
     lateral_span=0.45,
     vertical_span=0.28,
     base_distance=0.65,
     distance_span=0.18,
+    orbit_radius=0.65,
+    orbit_radius_span=0.0,
+    orbit_angle_span_deg=360.0,
+    orbit_start_angle_deg=0.0,
+    orbit_vertical_span=0.0,
     orientation_mode="fixed",
     fixed_view_direction=None,
     fixed_sweep_z_deg=0.0,
     fixed_sweep_x_deg=0.0,
 ):
     """
-    Generate a one-sided scan trajectory for the detector.
+    Generate a detector trajectory around the scan center.
 
-    The detector stays on one side of the source and scans left/right,
-    up/down, and at several distances. Its nominal viewing direction is
-    either constant, or it can be re-aimed towards the provided source_position.
+    trajectory_mode:
+        - "grid_scan": one-sided left/right, up/down scan at several distances.
+        - "around_center": orbit around scan_center in the XY plane.
+
+    The nominal viewing direction is either constant, or it can be re-aimed
+    towards the provided scan_center.
     """
     rotations = np.zeros((num_measurements, 3, 3), dtype=float)
     translations = np.zeros((num_measurements, 3), dtype=float)
@@ -131,6 +140,7 @@ def make_detector_trajectory(
     vertical_axis = np.array([0.0, 0.0, 1.0], dtype=float)
     nominal_view_direction = -standoff_axis
 
+    trajectory_mode = str(trajectory_mode or "grid_scan").strip().lower().replace("-", "_")
     orientation_mode = str(orientation_mode or "fixed").strip().lower().replace("-", "_")
     if fixed_view_direction is not None:
         fixed_view_direction = normalize(np.asarray(fixed_view_direction, dtype=float))
@@ -153,39 +163,65 @@ def make_detector_trajectory(
     else:
         raise ValueError("orientation_mode must be 'fixed' or 'towards_target'. Got: " f"{orientation_mode!r}")
 
-    num_rows = max(1, int(round(math.sqrt(max(num_measurements, 1) / 2.0))))
-    num_columns = max(1, int(math.ceil(num_measurements / num_rows)))
-    vertical_positions = (
-        np.linspace(-vertical_span, vertical_span, num_rows)
-        if num_rows > 1
-        else np.array([0.0], dtype=float)
-    )
+    if trajectory_mode == "grid_scan":
+        num_rows = max(1, int(round(math.sqrt(max(num_measurements, 1) / 2.0))))
+        num_columns = max(1, int(math.ceil(num_measurements / num_rows)))
+        vertical_positions = (
+            np.linspace(-vertical_span, vertical_span, num_rows)
+            if num_rows > 1
+            else np.array([0.0], dtype=float)
+        )
+    elif trajectory_mode == "around_center":
+        full_orbit = abs(abs(float(orbit_angle_span_deg)) - 360.0) < 1e-9
+        angle_denominator = num_measurements if full_orbit else max(num_measurements - 1, 1)
+    else:
+        raise ValueError(
+            "trajectory_mode must be 'grid_scan' or 'around_center'. Got: "
+            f"{trajectory_mode!r}"
+        )
 
     for i in range(num_measurements):
-        row = i // num_columns
-        column = i % num_columns
-        column_fraction = 0.5 if num_columns == 1 else column / (num_columns - 1)
-        if row % 2 == 1:
-            column_fraction = 1.0 - column_fraction
+        if trajectory_mode == "grid_scan":
+            row = i // num_columns
+            column = i % num_columns
+            column_fraction = 0.5 if num_columns == 1 else column / (num_columns - 1)
+            if row % 2 == 1:
+                column_fraction = 1.0 - column_fraction
 
-        lateral_offset = (2.0 * column_fraction - 1.0) * lateral_span
-        vertical_offset = vertical_positions[row]
-        distance_phase = i / max(num_measurements, 1)
-        standoff_distance = base_distance + distance_span * math.sin(
-            2.0 * np.pi * distance_phase + 0.6 * row
-        )
-        standoff_distance += 0.03 * rng.normal()
-        standoff_distance = max(0.25, standoff_distance)
+            lateral_offset = (2.0 * column_fraction - 1.0) * lateral_span
+            vertical_offset = vertical_positions[row]
+            distance_phase = i / max(num_measurements, 1)
+            standoff_distance = base_distance + distance_span * math.sin(
+                2.0 * np.pi * distance_phase + 0.6 * row
+            )
+            standoff_distance += 0.03 * rng.normal()
+            standoff_distance = max(0.25, standoff_distance)
 
-        detector_position = (
-            source_position
-            + lateral_offset * lateral_axis
-            + standoff_distance * standoff_axis
-            + vertical_offset * vertical_axis
-        )
+            detector_position = (
+                scan_center
+                + lateral_offset * lateral_axis
+                + standoff_distance * standoff_axis
+                + vertical_offset * vertical_axis
+            )
+            z_fraction = 2.0 * column_fraction - 1.0
+            x_fraction = 0.0 if num_rows == 1 else 2.0 * row / (num_rows - 1) - 1.0
+        else:
+            orbit_fraction = 0.0 if num_measurements <= 1 else i / angle_denominator
+            angle = math.radians(float(orbit_start_angle_deg))
+            angle += math.radians(float(orbit_angle_span_deg)) * orbit_fraction
+            radial_direction = (
+                math.cos(angle) * standoff_axis
+                + math.sin(angle) * lateral_axis
+            )
+            radius = orbit_radius + orbit_radius_span * math.sin(2.0 * np.pi * orbit_fraction)
+            radius = max(0.25, radius)
+            vertical_offset = orbit_vertical_span * math.sin(2.0 * np.pi * orbit_fraction)
+            detector_position = scan_center + radius * radial_direction + vertical_offset * vertical_axis
+            z_fraction = math.sin(angle)
+            x_fraction = 0.0 if orbit_vertical_span == 0.0 else math.sin(2.0 * np.pi * orbit_fraction)
 
         if base_rotation is None:
-            view_direction = source_position - detector_position
+            view_direction = scan_center - detector_position
             if np.linalg.norm(view_direction) < EPS:
                 view_direction = nominal_view_direction
             rotation = rotation_from_local_axis(
@@ -193,8 +229,6 @@ def make_detector_trajectory(
                 local_forward=geometry["detector_forward_local"],
             )
         else:
-            z_fraction = 2.0 * column_fraction - 1.0
-            x_fraction = 0.0 if num_rows == 1 else 2.0 * row / (num_rows - 1) - 1.0
             z_angle = math.radians(float(fixed_sweep_z_deg)) * z_fraction
             x_angle = math.radians(float(fixed_sweep_x_deg)) * x_fraction
             sweep_rotation = (
