@@ -89,14 +89,50 @@ def main():
     # Currently available: "mlem".
     reconstruction_method = "mlem"
 
+    NUM_MEASUREMENTS = 30
+    SEED = 11
+    TRUE_SOURCE_SPECS = [
+        {"position": (0.18, -0.12, 0.26), "relative_strength": 1.0},
+        {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
+        {"position": (0.34, -0.07, 0.38), "relative_strength": 0.45},
+    ]
+    NUM_CHANNELS = 16
+    DIODE_PITCH = 0.006
+    BACKGROUND_MEAN = 1000.0
+    BACKGROUND_CHANNEL_STD = 50.0
+    CHANNEL_SCALE_MEAN = 1.0
+    CHANNEL_SCALE_STD = 0.08
+    GENERATION_K = 4.5
+    PEAK_TOTAL_SOURCE_SIGNAL = 5000.0
     ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
+    SCAN_CENTER = None
+    ANGULAR_JITTER_DEG = 3.0
+    LATERAL_SPAN = 0.60
+    VERTICAL_SPAN = 0.36
+    BASE_DISTANCE = 0.65
+    DISTANCE_SPAN = 0.18
 
     dataset = generate_synthetic_dataset(
-        num_measurements=30,
-        seed=11,
+        num_measurements=NUM_MEASUREMENTS,
+        seed=SEED,
         orientation_mode=ORIENTATION_MODE,
         fixed_view_direction=FIXED_VIEW_DIRECTION,
+        source_specs=TRUE_SOURCE_SPECS,
+        num_channels=NUM_CHANNELS,
+        diode_pitch=DIODE_PITCH,
+        background_mean=BACKGROUND_MEAN,
+        background_channel_std=BACKGROUND_CHANNEL_STD,
+        channel_scale_mean=CHANNEL_SCALE_MEAN,
+        channel_scale_std=CHANNEL_SCALE_STD,
+        generation_k=GENERATION_K,
+        peak_total_source_signal=PEAK_TOTAL_SOURCE_SIGNAL,
+        scan_center=SCAN_CENTER,
+        angular_jitter_deg=ANGULAR_JITTER_DEG,
+        lateral_span=LATERAL_SPAN,
+        vertical_span=VERTICAL_SPAN,
+        base_distance=BASE_DISTANCE,
+        distance_span=DISTANCE_SPAN,
     )
     print_summary(dataset)
 

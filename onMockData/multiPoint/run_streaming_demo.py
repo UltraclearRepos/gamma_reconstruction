@@ -90,34 +90,86 @@ def print_streaming_localization_metrics(history):
 
 
 def main():
+    # Mock data generation.
+    SEED = 11
+    NUM_MEASUREMENTS = 50
+    TRUE_SOURCE_SPECS = [
+        {"position": (0.18, -0.12, 0.26), "relative_strength": 1.0},
+        {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
+        {"position": (0.34, -0.07, 0.38), "relative_strength": 0.45},
+    ]
+    NUM_CHANNELS = 16
+    DIODE_PITCH = 0.006
+    BACKGROUND_MEAN = 1000.0
+    BACKGROUND_CHANNEL_STD = 50.0
+    CHANNEL_SCALE_MEAN = 1.0
+    CHANNEL_SCALE_STD = 0.08
+    GENERATION_K = 4.5
+    PEAK_TOTAL_SOURCE_SIGNAL = 5000.0
+
+    # Mock detector trajectory.
     ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
-    STREAMING_METHOD = "incremental_mlem"  # "prefix_mlem" or "incremental_mlem"
-    RELAXATION = 1.0  # used by incremental_mlem; try 0.5..1.0
-    AVOID_DETECTOR_DISTANCE = 0.65  # [m] penalty radius around trajectory; try 0.25..0.50
-    AVOID_DETECTOR_POWER = 6.0  # higher => stronger push away from detector
-    ACTIVITY_DECAY = 0.98  # 1.0 disables; try 0.95..0.995 to "forget" old spikes
+    SCAN_CENTER = None  # None means centroid of TRUE_SOURCE_SPECS
+    ANGULAR_JITTER_DEG = 3.0
+    LATERAL_SPAN = 0.60
+    VERTICAL_SPAN = 0.36
+    BASE_DISTANCE = 0.65
+    DISTANCE_SPAN = 0.18
+
+    # Reconstruction volume.
+    SEARCH_MIN = (-0.55, -0.65, -0.15)
+    SEARCH_MAX = (0.75, 0.35, 0.75)
+    GRID_SIZE = 13
+
+    # Assumed reconstruction model.
     ASSUMED_BACKGROUND_MEAN = 1200.0
     ASSUMED_CHANNEL_SCALE = 1.0
     ASSUMED_K = 4.0
-    GRID_SIZE = 13
+
+    # Streaming reconstruction algorithm.
+    STREAMING_METHOD = "incremental_mlem"  # "prefix_mlem" or "incremental_mlem"
+    RELAXATION = 1.0  # used by incremental_mlem; valid range: (0, 1]
     INNER_ITERATIONS_PER_UPDATE = 20
     MEASUREMENTS_PER_UPDATE = 2
     MAX_SOURCES_TO_REPORT = 3
+    MIN_SOURCE_DISTANCE = 0.08
+    AVOID_DETECTOR_DISTANCE = 0.65  # [m] penalty radius around trajectory; try 0.25..0.50
+    AVOID_DETECTOR_POWER = 6.0  # higher => stronger push away from detector
+    ACTIVITY_DECAY = 0.98  # 1.0 disables; try 0.95..0.995 to "forget" old spikes
+
+    # Localization metric.
     ACTIVITY_MAX_RELATIVE_DROP = 0.5
 
+    # Visualization output.
+    UPDATE_FRAME_MAX_VOXELS = 100000
+    GIF_FPS = 1.0
+
     dataset = generate_synthetic_dataset(
-        num_measurements=50,
-        seed=11,
+        num_measurements=NUM_MEASUREMENTS,
+        seed=SEED,
         orientation_mode=ORIENTATION_MODE,
         fixed_view_direction=FIXED_VIEW_DIRECTION,
+        source_specs=TRUE_SOURCE_SPECS,
+        num_channels=NUM_CHANNELS,
+        diode_pitch=DIODE_PITCH,
+        background_mean=BACKGROUND_MEAN,
+        background_channel_std=BACKGROUND_CHANNEL_STD,
+        channel_scale_mean=CHANNEL_SCALE_MEAN,
+        channel_scale_std=CHANNEL_SCALE_STD,
+        generation_k=GENERATION_K,
+        peak_total_source_signal=PEAK_TOTAL_SOURCE_SIGNAL,
+        scan_center=SCAN_CENTER,
+        angular_jitter_deg=ANGULAR_JITTER_DEG,
+        lateral_span=LATERAL_SPAN,
+        vertical_span=VERTICAL_SPAN,
+        base_distance=BASE_DISTANCE,
+        distance_span=DISTANCE_SPAN,
     )
 
     print_dataset_summary(dataset)
 
     num_channels = dataset["counts"].shape[1]
-    search_min = (-0.55, -0.65, -0.15)
-    search_max = (0.75, 0.35, 0.75)
 
     assumed_model = {
         "assumed_backgrounds": np.full(num_channels, ASSUMED_BACKGROUND_MEAN, dtype=float),
@@ -131,15 +183,15 @@ def main():
         rotations=dataset["rotations"],
         translations=dataset["translations"],
         **assumed_model,
-        search_min=search_min,
-        search_max=search_max,
+        search_min=SEARCH_MIN,
+        search_max=SEARCH_MAX,
         true_sources=dataset["true_sources"],
         method=STREAMING_METHOD,
         grid_size=GRID_SIZE,
         inner_iterations_per_update=INNER_ITERATIONS_PER_UPDATE,
         measurements_per_update=MEASUREMENTS_PER_UPDATE,
         max_sources=MAX_SOURCES_TO_REPORT,
-        min_source_distance=0.08,
+        min_source_distance=MIN_SOURCE_DISTANCE,
         relaxation=RELAXATION,
         avoid_detector_distance=AVOID_DETECTOR_DISTANCE,
         avoid_detector_power=AVOID_DETECTOR_POWER,
@@ -195,7 +247,7 @@ def main():
             candidate_positions=result["candidate_positions"],
             activity=activity_snapshot,
             max_sources=MAX_SOURCES_TO_REPORT,
-            min_distance=0.08,
+            min_distance=MIN_SOURCE_DISTANCE,
         )
         visualize_mlem_activity(
             dataset,
@@ -207,7 +259,7 @@ def main():
             update_end=used_measurements,
             save_path=updates_3d_dir / f"update_{update_index:03d}.png",
             show=False,
-            max_voxels=100000
+            max_voxels=UPDATE_FRAME_MAX_VOXELS,
         )
         previous_used_measurements = used_measurements
 
@@ -215,7 +267,7 @@ def main():
         frames_dir=updates_3d_dir,
         output_path=output_dir / "streaming_activity_updates_3d.gif",
         pattern="update_*.png",
-        fps=1.0,
+        fps=GIF_FPS,
     )
 
     print()

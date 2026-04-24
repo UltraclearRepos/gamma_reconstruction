@@ -35,10 +35,25 @@ def expected_counts_multi_source(
 
 
 def generate_synthetic_dataset(
-    num_measurements=30,
-    seed=11,
-    orientation_mode="fixed",
-    fixed_view_direction=(0.0, 1.0, 0.0),
+    num_measurements,
+    seed,
+    orientation_mode,
+    fixed_view_direction,
+    source_specs,
+    num_channels,
+    diode_pitch,
+    background_mean,
+    background_channel_std,
+    channel_scale_mean,
+    channel_scale_std,
+    generation_k,
+    peak_total_source_signal,
+    scan_center,
+    angular_jitter_deg,
+    lateral_span,
+    vertical_span,
+    base_distance,
+    distance_span,
 ):
     """
     Generate one synthetic multi-source experiment.
@@ -55,36 +70,45 @@ def generate_synthetic_dataset(
     """
     rng = np.random.default_rng(seed)
 
-    geometry = make_detector_geometry(num_channels=16, diode_pitch=0.006)
+    geometry = make_detector_geometry(num_channels=num_channels, diode_pitch=diode_pitch)
     num_channels = len(geometry["diode_positions_local"])
 
-    true_sources = [
-        {"position": np.array([0.18, -0.12, 0.26], dtype=float), "relative_strength": 1.0},
-        {"position": np.array([-0.10, -0.18, 0.16], dtype=float), "relative_strength": 0.65},
-        {"position": np.array([0.34, -0.07, 0.38], dtype=float), "relative_strength": 0.45},
-    ]
-    scan_center = np.mean([source["position"] for source in true_sources], axis=0)
+    if not source_specs:
+        raise ValueError("source_specs must contain at least one source.")
 
-    background_mean = 1000.0
-    background_channel_std = 50.0
-    peak_total_source_signal = 5000.0
+    true_sources = [
+        {
+            "position": np.array(source["position"], dtype=float),
+            "relative_strength": float(source["relative_strength"]),
+        }
+        for source in source_specs
+    ]
+    if scan_center is None:
+        scan_center = np.mean([source["position"] for source in true_sources], axis=0)
+    else:
+        scan_center = np.array(scan_center, dtype=float)
 
     true_backgrounds = rng.normal(
         loc=background_mean,
         scale=background_channel_std,
         size=num_channels,
     )
-    true_channel_scales = rng.normal(loc=1.0, scale=0.08, size=num_channels)
-    generation_k = 4.5
+    true_channel_scales = rng.normal(
+        loc=channel_scale_mean,
+        scale=channel_scale_std,
+        size=num_channels,
+    )
 
     rotations, translations = make_detector_trajectory(
         geometry=geometry,
         source_position=scan_center,
         num_measurements=num_measurements,
         rng=rng,
-        angular_jitter_deg=3.0,
-        lateral_span=0.60,
-        vertical_span=0.36,
+        angular_jitter_deg=angular_jitter_deg,
+        lateral_span=lateral_span,
+        vertical_span=vertical_span,
+        base_distance=base_distance,
+        distance_span=distance_span,
         orientation_mode=orientation_mode,
         fixed_view_direction=fixed_view_direction,
     )
@@ -134,5 +158,8 @@ def generate_synthetic_dataset(
         "true_channel_scales": true_channel_scales,
         "generation_k": generation_k,
         "background_mean": background_mean,
+        "background_channel_std": background_channel_std,
+        "channel_scale_mean": channel_scale_mean,
+        "channel_scale_std": channel_scale_std,
         "peak_total_source_signal": peak_total_source_signal,
     }

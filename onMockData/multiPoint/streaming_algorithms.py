@@ -319,6 +319,8 @@ def streaming_incremental_mlem_reconstruction(
     num_measurements, num_channels = counts.shape
     chunk_size = max(1, int(measurements_per_update))
     relaxation = float(relaxation)
+    if not 0.0 < relaxation <= 1.0:
+        raise ValueError("relaxation must be in the range (0, 1].")
 
     candidate_positions = make_candidate_grid(
         search_min=search_min,
@@ -380,8 +382,7 @@ def streaming_incremental_mlem_reconstruction(
             ratio = counts_block / np.maximum(predicted_counts, EPS)
             correction = (response_block.T @ ratio) / np.maximum(sensitivity_block, EPS)
             correction = np.maximum(correction, EPS)
-            if abs(relaxation - 1.0) > 1e-12:
-                correction = correction ** relaxation
+            correction = correction ** relaxation
             activity *= correction
             activity *= avoidance_weights
             activity = np.maximum(activity, EPS)
