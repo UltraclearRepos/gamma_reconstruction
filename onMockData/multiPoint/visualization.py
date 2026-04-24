@@ -371,6 +371,71 @@ def visualize_streaming_best_position(history, dataset, save_path=None, show=Fal
     finalize_figure(fig, save_path=save_path, show=show)
 
 
+def visualize_streaming_localization_metrics(history, save_path=None, show=False):
+    """Plot selected voxel to true source distance metrics after each update."""
+    import matplotlib.pyplot as plt
+
+    used_measurements = []
+    mean_distances = []
+    weighted_mean_distances = []
+    p90_distances = []
+    selected_voxel_counts = []
+
+    for item in history:
+        metrics = item["localization_metrics"]
+        used_measurements.append(float(item["used_measurements"]))
+        mean_distances.append(float(metrics["all_source_distance_mean"]))
+        weighted_mean_distances.append(float(metrics["all_source_distance_weighted_mean"]))
+        p90_distances.append(float(metrics["all_source_distance_p90"]))
+        selected_voxel_counts.append(int(metrics["selected_voxel_count"]))
+
+    fig, axes = plt.subplots(2, 1, figsize=(8, 6), sharex=True, height_ratios=[3, 1])
+
+    axes[0].plot(
+        used_measurements,
+        mean_distances,
+        marker="o",
+        linewidth=1.8,
+        color="tab:blue",
+        label="mean",
+    )
+    axes[0].plot(
+        used_measurements,
+        weighted_mean_distances,
+        marker="o",
+        linewidth=1.8,
+        color="tab:orange",
+        label="weighted mean",
+    )
+    axes[0].plot(
+        used_measurements,
+        p90_distances,
+        marker="o",
+        linewidth=1.8,
+        color="tab:green",
+        label="p90",
+    )
+    axes[0].set_title("Streaming localization metric")
+    axes[0].set_ylabel("voxel-source distance [m]")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend(loc="best")
+
+    axes[1].bar(
+        used_measurements,
+        selected_voxel_counts,
+        width=1.4,
+        color="tab:gray",
+        alpha=0.75,
+    )
+    axes[1].set_xlabel("used measurements")
+    axes[1].set_ylabel("voxels")
+    axes[1].grid(True, axis="y", alpha=0.3)
+
+    fig.tight_layout()
+
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
 def create_gif_from_frames(
     frames_dir,
     output_path=None,

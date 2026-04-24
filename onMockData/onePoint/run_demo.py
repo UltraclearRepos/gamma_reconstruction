@@ -79,7 +79,15 @@ def main():
     # "coarse_to_fine", "grid_search", or "random_search".
     reconstruction_method = "coarse_to_fine"
 
-    dataset = generate_synthetic_dataset(num_measurements=24, seed=7)
+    ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
+    FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
+
+    dataset = generate_synthetic_dataset(
+        num_measurements=24,
+        seed=7,
+        orientation_mode=ORIENTATION_MODE,
+        fixed_view_direction=FIXED_VIEW_DIRECTION,
+    )
     num_channels = dataset["counts"].shape[1]
     search_min = (-0.40, -0.50, -0.10)
     search_max = (0.60, 0.30, 0.60)

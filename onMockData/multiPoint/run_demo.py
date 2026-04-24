@@ -12,6 +12,7 @@ if str(ON_MOCK_DATA_DIR) not in sys.path:
     sys.path.insert(0, str(ON_MOCK_DATA_DIR))
 
 from reconstruction_algorithms import reconstruct_sources
+from metrics import print_activity_localization_summary, summarize_activity_localization
 from simulation import generate_synthetic_dataset
 from visualization import (
     visualize_history_score,
@@ -72,6 +73,17 @@ def print_reconstruction_summary(method, result):
                 print(f"  {key}: {value}")
 
 
+def print_localization_metrics(result, true_sources, relative_drop):
+    """Print localization metrics for the activity map."""
+    metrics = summarize_activity_localization(
+        voxel_positions=result["candidate_positions"],
+        activity=result["activity"],
+        true_sources=true_sources,
+        max_relative_drop=relative_drop,
+    )
+    print_activity_localization_summary(metrics)
+
+
 def main():
     # Change only this value while testing multi-source reconstruction methods.
     # Currently available: "mlem".
@@ -93,16 +105,17 @@ def main():
     # Reconstruction volume. With one-sided detector scans, this range matters a lot:
     # if it includes regions close to the detector, ML-EM may place activity there
     # because depth is weakly constrained.
-    search_min = (-0.35, -0.45, -0.05)
-    search_max = (0.55, 0.20, 0.55)
+    search_min = (-0.55, -0.65, -0.15)
+    search_max = (0.75, 0.35, 0.75)
 
-    ASSUMED_BACKGROUND_MEAN = 10000
+    ASSUMED_BACKGROUND_MEAN = 1000
     ASSUMED_CHANNEL_SCALE = 1.0
     ASSUMED_K = 4.0
 
-    GRID_SIZE = 11
+    GRID_SIZE = 15
     NUM_ITERATIONS = 10000
     MAX_SOURCES_TO_REPORT = 3
+    ACTIVITY_MAX_RELATIVE_DROP = 0.25
 
     assumed_model = {
         "assumed_backgrounds": np.full(num_channels, ASSUMED_BACKGROUND_MEAN, dtype=float),
@@ -126,6 +139,11 @@ def main():
         min_source_distance=0.08,
     )
     print_reconstruction_summary(reconstruction_method, result)
+    print_localization_metrics(
+        result=result,
+        true_sources=dataset["true_sources"],
+        relative_drop=ACTIVITY_MAX_RELATIVE_DROP,
+    )
 
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
     visualize_multi_source_scene(

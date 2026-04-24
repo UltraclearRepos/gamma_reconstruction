@@ -19,8 +19,10 @@ from visualization import (
     visualize_mlem_activity,
     visualize_multi_source_scene,
     visualize_streaming_best_position,
+    visualize_streaming_localization_metrics,
 )
 from reconstruction_algorithms import pick_activity_peaks
+from metrics import print_activity_localization_summary
 
 
 def print_dataset_summary(dataset):
@@ -71,13 +73,38 @@ def print_streaming_summary(result):
         )
 
 
+def print_streaming_localization_metrics(history):
+    """Print localization metrics saved after each streaming update."""
+    print()
+    print("Localization metrics after each update:")
+    for item in history:
+        metrics = item["localization_metrics"]
+        print(
+            " "
+            f"used_measurements={int(item['used_measurements'])}, "
+            f"selected_voxels={metrics['selected_voxel_count']}, "
+            f"voxel_source_mean={metrics['all_source_distance_mean']:.4f} m, "
+            f"voxel_source_wmean={metrics['all_source_distance_weighted_mean']:.4f} m, "
+            f"voxel_source_p90={metrics['all_source_distance_p90']:.4f} m"
+        )
+
+
 def main():
     ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
     STREAMING_METHOD = "incremental_mlem"  # "prefix_mlem" or "incremental_mlem"
     RELAXATION = 1.0  # used by incremental_mlem; try 0.5..1.0
-    AVOID_DETECTOR_DISTANCE = 0.35  # [m] penalty radius around trajectory; try 0.25..0.50
+    AVOID_DETECTOR_DISTANCE = 0.65  # [m] penalty radius around trajectory; try 0.25..0.50
     AVOID_DETECTOR_POWER = 6.0  # higher => stronger push away from detector
+    ACTIVITY_DECAY = 0.98  # 1.0 disables; try 0.95..0.995 to "forget" old spikes
+    ASSUMED_BACKGROUND_MEAN = 1200.0
+    ASSUMED_CHANNEL_SCALE = 1.0
+    ASSUMED_K = 4.0
+    GRID_SIZE = 13
+    INNER_ITERATIONS_PER_UPDATE = 20
+    MEASUREMENTS_PER_UPDATE = 2
+    MAX_SOURCES_TO_REPORT = 3
+    ACTIVITY_MAX_RELATIVE_DROP = 0.5
 
     dataset = generate_synthetic_dataset(
         num_measurements=50,
@@ -89,17 +116,8 @@ def main():
     print_dataset_summary(dataset)
 
     num_channels = dataset["counts"].shape[1]
-    search_min = (-0.35, -0.45, -0.05)
-    search_max = (0.55, 0.20, 0.55)
-
-    ASSUMED_BACKGROUND_MEAN = 1200.0
-    ASSUMED_CHANNEL_SCALE = 1.0
-    ASSUMED_K = 4.0
-
-    GRID_SIZE = 9
-    INNER_ITERATIONS_PER_UPDATE = 20
-    MEASUREMENTS_PER_UPDATE = 2
-    MAX_SOURCES_TO_REPORT = 3
+    search_min = (-0.55, -0.65, -0.15)
+    search_max = (0.75, 0.35, 0.75)
 
     assumed_model = {
         "assumed_backgrounds": np.full(num_channels, ASSUMED_BACKGROUND_MEAN, dtype=float),
@@ -115,6 +133,7 @@ def main():
         **assumed_model,
         search_min=search_min,
         search_max=search_max,
+        true_sources=dataset["true_sources"],
         method=STREAMING_METHOD,
         grid_size=GRID_SIZE,
         inner_iterations_per_update=INNER_ITERATIONS_PER_UPDATE,
@@ -124,8 +143,12 @@ def main():
         relaxation=RELAXATION,
         avoid_detector_distance=AVOID_DETECTOR_DISTANCE,
         avoid_detector_power=AVOID_DETECTOR_POWER,
+        activity_decay=ACTIVITY_DECAY,
+        localization_max_relative_drop=ACTIVITY_MAX_RELATIVE_DROP,
     )
     print_streaming_summary(result)
+    print_streaming_localization_metrics(result["stream_history"])
+    print_activity_localization_summary(result["stream_history"][-1]["localization_metrics"])
 
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
     updates_3d_dir = output_dir / "streaming_activity_updates_3d"
@@ -156,6 +179,11 @@ def main():
         save_path=output_dir / "streaming_best_position_history.png",
         show=False,
     )
+    visualize_streaming_localization_metrics(
+        result["stream_history"],
+        save_path=output_dir / "streaming_localization_metric_history.png",
+        show=False,
+    )
 
     previous_used_measurements = 0
     for update_index, (activity_snapshot, history_item) in enumerate(
@@ -179,6 +207,7 @@ def main():
             update_end=used_measurements,
             save_path=updates_3d_dir / f"update_{update_index:03d}.png",
             show=False,
+            max_voxels=100000
         )
         previous_used_measurements = used_measurements
 
@@ -195,6 +224,7 @@ def main():
     print(" ", output_dir / "streaming_mlem_activity_reconstruction.png")
     print(" ", output_dir / "streaming_mlem_score_history.png")
     print(" ", output_dir / "streaming_best_position_history.png")
+    print(" ", output_dir / "streaming_localization_metric_history.png")
     print(" ", updates_3d_dir / "update_001.png ...")
     print(" ", updates_gif_path)
 

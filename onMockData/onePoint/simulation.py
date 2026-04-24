@@ -11,9 +11,18 @@ from common.geometry import make_detector_geometry, make_detector_trajectory
 def generate_synthetic_dataset(
     num_measurements=24,
     seed=7,
+    orientation_mode="fixed",
+    fixed_view_direction=(0.0, 1.0, 0.0),
 ):
     """
     Generate one synthetic experiment.
+
+    orientation_mode:
+        - "fixed": keep detector pointing in one direction (default).
+        - "towards_target": re-aim detector towards the true source each measurement.
+
+    fixed_view_direction:
+        3D vector for "fixed" mode, e.g. (0, 1, 0) or (1, 0, 0).
 
     A small model mismatch is introduced on purpose:
     - each channel has slightly different sensitivity,
@@ -45,6 +54,8 @@ def generate_synthetic_dataset(
         num_measurements=num_measurements,
         rng=rng,
         angular_jitter_deg=3.0,
+        orientation_mode=orientation_mode,
+        fixed_view_direction=fixed_view_direction,
     )
 
     unit_response = compute_detector_response(

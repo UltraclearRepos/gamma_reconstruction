@@ -5,6 +5,7 @@ Streaming reconstruction algorithms for multi-point source experiments.
 import numpy as np
 
 from common.geometry import EPS
+from metrics import summarize_activity_localization
 from reconstruction_algorithms import make_candidate_grid, pick_activity_peaks
 from reconstruction_objective import (
     build_system_matrix,
@@ -31,7 +32,7 @@ def compute_detector_avoidance_weights(
     if avoid_distance <= 0.0:
         return np.ones(len(candidate_positions), dtype=float)
     if detector_positions is None or len(detector_positions) == 0:
-        return np.ones(len(candidate_positions), dtype=float)
+        raise ValueError("Detector positions must be provided when avoid_distance > 0.")
 
     candidate_positions = np.asarray(candidate_positions, dtype=float)
     detector_positions = np.asarray(detector_positions, dtype=float)
@@ -55,6 +56,7 @@ def reconstruct_sources(
     assumed_k,
     search_min,
     search_max,
+    true_sources,
     method="prefix_mlem",
     grid_size=9,
     inner_iterations_per_update=4,
@@ -64,7 +66,9 @@ def reconstruct_sources(
     relaxation=1.0,
     avoid_detector_distance=0.0,
     avoid_detector_power=2.0,
+    activity_decay=1.0,
     store_activity_history=True,
+    localization_max_relative_drop=0.25,
 ):
     """
     Run one streaming reconstruction method using a plain if/elif dispatcher.
@@ -93,7 +97,10 @@ def reconstruct_sources(
             min_source_distance=min_source_distance,
             avoid_detector_distance=avoid_detector_distance,
             avoid_detector_power=avoid_detector_power,
+            activity_decay=activity_decay,
             store_activity_history=store_activity_history,
+            true_sources=true_sources,
+            localization_max_relative_drop=localization_max_relative_drop,
         )
 
     if method == "incremental_mlem":
@@ -115,7 +122,10 @@ def reconstruct_sources(
             relaxation=relaxation,
             avoid_detector_distance=avoid_detector_distance,
             avoid_detector_power=avoid_detector_power,
+            activity_decay=activity_decay,
             store_activity_history=store_activity_history,
+            true_sources=true_sources,
+            localization_max_relative_drop=localization_max_relative_drop,
         )
 
     raise ValueError(
@@ -134,6 +144,7 @@ def streaming_mlem_reconstruction(
     assumed_k,
     search_min,
     search_max,
+    true_sources,
     grid_size=9,
     inner_iterations_per_update=4,
     measurements_per_update=1,
@@ -141,7 +152,9 @@ def streaming_mlem_reconstruction(
     min_source_distance=0.08,
     avoid_detector_distance=0.0,
     avoid_detector_power=2.0,
+    activity_decay=1.0,
     store_activity_history=True,
+    localization_max_relative_drop=0.25,
 ):
     """
     Run ML-EM in a streaming workflow.
@@ -198,6 +211,10 @@ def streaming_mlem_reconstruction(
             power=avoid_detector_power,
         )
 
+        if start_index > 0 and float(activity_decay) < 1.0:
+            activity *= float(activity_decay)
+            activity = np.maximum(activity, EPS)
+
         if start_index == 0:
             initial_signal = np.maximum(counts_flat - backgrounds_flat, 0.0)
             initial_activity = np.sum(initial_signal) / max(float(np.sum(sensitivity)), EPS)
@@ -233,17 +250,23 @@ def streaming_mlem_reconstruction(
         )
         best_activity = estimated_sources[0]["activity"] if estimated_sources else 0.0
 
-        stream_history.append(
-            {
-                "update_index": float(len(stream_history) + 1),
-                "used_measurements": float(end_index),
-                "score": poisson_negative_log_likelihood(counts_flat, predicted_counts),
-                "total_activity": float(np.sum(activity)),
-                "max_activity": float(np.max(activity)),
-                "best_position": best_position,
-                "best_activity": float(best_activity),
-            }
+        history_item = {
+            "update_index": float(len(stream_history) + 1),
+            "used_measurements": float(end_index),
+            "score": poisson_negative_log_likelihood(counts_flat, predicted_counts),
+            "total_activity": float(np.sum(activity)),
+            "max_activity": float(np.max(activity)),
+            "best_position": best_position,
+            "best_activity": float(best_activity),
+        }
+        history_item["localization_metrics"] = summarize_activity_localization(
+            voxel_positions=candidate_positions,
+            activity=activity,
+            true_sources=true_sources,
+            max_relative_drop=localization_max_relative_drop,
         )
+
+        stream_history.append(history_item)
         if store_activity_history:
             activity_history.append(activity.copy())
 
@@ -273,6 +296,7 @@ def streaming_incremental_mlem_reconstruction(
     assumed_k,
     search_min,
     search_max,
+    true_sources,
     grid_size=9,
     inner_iterations_per_update=1,
     measurements_per_update=1,
@@ -281,7 +305,9 @@ def streaming_incremental_mlem_reconstruction(
     relaxation=1.0,
     avoid_detector_distance=0.0,
     avoid_detector_power=2.0,
+    activity_decay=1.0,
     store_activity_history=True,
+    localization_max_relative_drop=0.25,
 ):
     """
     Streaming-friendly ML-EM variant (OSEM-like / incremental EM).
@@ -336,6 +362,10 @@ def streaming_incremental_mlem_reconstruction(
             power=avoid_detector_power,
         )
 
+        if start_index > 0 and float(activity_decay) < 1.0:
+            activity *= float(activity_decay)
+            activity = np.maximum(activity, EPS)
+
         if start_index == 0:
             initial_signal = np.maximum(counts_block - backgrounds_block, 0.0)
             initial_activity = np.sum(initial_signal) / max(float(np.sum(sensitivity_block)), EPS)
@@ -378,17 +408,23 @@ def streaming_incremental_mlem_reconstruction(
         )
         best_activity = estimated_sources[0]["activity"] if estimated_sources else 0.0
 
-        stream_history.append(
-            {
-                "update_index": float(len(stream_history) + 1),
-                "used_measurements": float(end_index),
-                "score": poisson_negative_log_likelihood(counts_prefix, predicted_prefix),
-                "total_activity": float(np.sum(activity)),
-                "max_activity": float(np.max(activity)),
-                "best_position": best_position,
-                "best_activity": float(best_activity),
-            }
+        history_item = {
+            "update_index": float(len(stream_history) + 1),
+            "used_measurements": float(end_index),
+            "score": poisson_negative_log_likelihood(counts_prefix, predicted_prefix),
+            "total_activity": float(np.sum(activity)),
+            "max_activity": float(np.max(activity)),
+            "best_position": best_position,
+            "best_activity": float(best_activity),
+        }
+        history_item["localization_metrics"] = summarize_activity_localization(
+            voxel_positions=candidate_positions,
+            activity=activity,
+            true_sources=true_sources,
+            max_relative_drop=localization_max_relative_drop,
         )
+
+        stream_history.append(history_item)
         if store_activity_history:
             activity_history.append(activity.copy())
 
