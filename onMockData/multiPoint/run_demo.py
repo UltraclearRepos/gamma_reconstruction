@@ -38,7 +38,7 @@ def make_default_config():
 
         # Mock data generation.
         "SEED": 11,
-        "NUM_MEASUREMENTS": 50,
+        "NUM_MEASUREMENTS": 30,
         "TRUE_SOURCE_SPECS": [
             {"position": (0.18, -0.2, 0.2), "relative_strength": 1.0},
             # {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
@@ -47,7 +47,7 @@ def make_default_config():
         "NUM_CHANNELS": 16,
         "DIODE_PITCH": 0.006,
         "MEASUREMENT_DURATION_SECONDS": 1.0,
-        "BACKGROUND_MEAN_PER_SECOND": 10000.0,
+        "BACKGROUND_MEAN_PER_SECOND": 1000.0,
         "BACKGROUND_CHANNEL_STD_PER_SECOND": 200.0,
         "CHANNEL_SCALE_MEAN": 1.0,
         "CHANNEL_SCALE_STD": 0.08,
@@ -55,7 +55,7 @@ def make_default_config():
         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,  
 
         # Assumed reconstruction model.
-        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 10000.0,
+        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
         "ASSUMED_CHANNEL_SCALE": 1.0,
         "ASSUMED_K": 4.5,
 
@@ -78,10 +78,10 @@ def make_default_config():
 
         "ORIENTATION_MODE": "fixed",
         "FIXED_VIEW_DIRECTION": (0, 1, 0),
-        "FIXED_SWEEP_Z_DEG": 45.0,
-        "FIXED_SWEEP_X_DEG": -45.0,
+        "FIXED_SWEEP_Z_DEG": 0.0,
+        "FIXED_SWEEP_X_DEG": 0.0,
         "SCAN_CENTER": tuple((np.array(search_min) + np.array(search_max)) / 2.0),
-        "ANGULAR_JITTER_DEG": 20.0,
+        "ANGULAR_JITTER_DEG": 0.0,
 
         # Reconstruction algorithm.
         "NUM_ITERATIONS": 10000,
@@ -94,7 +94,7 @@ def make_default_config():
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,
-        "UPDATE_FRAME_MAX_VOXELS": 1000,
+        "UPDATE_FRAME_MAX_VOXELS": 1000000,
         "GIF_FPS": 1.0,
         "AXIS_LIMITS_3D": (
             (-1, 1),
@@ -356,6 +356,7 @@ def main():
         estimated_sources=result["estimated_sources"],
         save_path=output_dir / "mlem_activity_reconstruction.png",
         show=False,
+        max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
         axis_limits=config["AXIS_LIMITS_3D"],
         highlight_used_trajectory=False,
         activity_color_limits=ACTIVITY_COLOR_LIMITS,

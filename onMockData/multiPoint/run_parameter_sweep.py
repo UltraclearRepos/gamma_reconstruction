@@ -39,7 +39,76 @@ SWEEP_DEFAULTS = {
 
 # Add groups here to test more cases. Lists are combined only inside a group.
 # Use "base" to pin one parameter while sweeping a smaller set of another.
+# Use "cases" for paired values, e.g. background and assumed background.
 SWEEP_GROUPS = [
+    # {
+    #     "name": "ratio_table_best_angles",
+    #     "base": {
+    #         "ANGULAR_JITTER_DEG": 20.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
+    #         "FIXED_SWEEP_Z_DEG": 60.0,  # Best tested left-right viewing sweep around world Z axis.
+    #         "FIXED_SWEEP_X_DEG": -60.0,  # Best tested up-down viewing sweep around world X axis.
+    #         "GENERATION_K": 4.5,  # Generated angular response.
+    #         "ASSUMED_K": 4.5,  # Matched angular response used by reconstruction.
+    #         "CHANNEL_SCALE_MEAN": 1.0,  # Generated global channel sensitivity.
+    #         "ASSUMED_CHANNEL_SCALE": 1.0,  # Matched global channel sensitivity used by reconstruction.
+    #     },
+    #     "cases": [
+    #         {
+    #             "SEED": [11, 12, 13, 14, 15],
+    #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
+    #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
+    #         },  # background/source = 0.2
+    #         {
+    #             "SEED": [11, 12, 13, 14, 15],
+    #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
+    #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2000.0,
+    #         },  # background/source = 0.5
+    #         {
+    #             "SEED": [11, 12, 13, 14, 15],
+    #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
+    #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
+    #         },  # background/source = 1.0
+    #         {
+    #             "SEED": [11, 12, 13, 14, 15],
+    #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
+    #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 500.0,
+    #         },  # background/source = 2.0
+    #         {
+    #             "SEED": [11, 12, 13, 14, 15],
+    #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
+    #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 200.0,
+    #         },  # background/source = 5.0
+    #     ],
+    # },
+    {
+        "name": "assumed_background_mismatch_best_case",
+        "base": {
+            "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
+            "FIXED_SWEEP_Z_DEG": 60.0,  # Best tested left-right viewing sweep around world Z axis.
+            "FIXED_SWEEP_X_DEG": -60.0,  # Best tested up-down viewing sweep around world X axis.
+            "BACKGROUND_MEAN_PER_SECOND": 1000.0,  # True background level.
+            "BACKGROUND_CHANNEL_STD_PER_SECOND": 0.0,  # Channel-to-channel background std per second.
+            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,  # background/source = 0.2.
+            "GENERATION_K": 4.5,  # Generated angular response.
+            "ASSUMED_K": 4.5,  # Matched angular response used by reconstruction.
+            "CHANNEL_SCALE_MEAN": 1.0,  # Generated global channel sensitivity.
+            "ASSUMED_CHANNEL_SCALE": 1.0,  # Matched global channel sensitivity used by reconstruction.
+        },
+        "sweep": {
+            "SEED": [11, 12, 13, 14, 15],
+            "ASSUMED_BACKGROUND_MEAN_PER_SECOND": [500.0, 700.0, 900.0, 1000.0, 1100.0, 1300.0, 1500.0, 2000.0],
+        },
+    },
     # {
     #     "name": "background_1000",
     #     "base": {
@@ -110,118 +179,118 @@ SWEEP_GROUPS = [
     #         "FIXED_SWEEP_X_DEG": [0.0, 10.0, 25.0, 45.0, 60.0],  # fixed mode only: up/down viewing sweep around world X axis.
     #     },
     # },
-    {
-        "name": "background_1000_source_strenght_500_different_angles",
-        "base": {
-            "ANGULAR_JITTER_DEG": 10.0,
-            "BACKGROUND_MEAN_PER_SECOND": 1000.0,
-            "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
-            "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 500.0,
-        },
-        "sweep": {
-            "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-            "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
-        },
-    },
-    {
-        "name": "background_1000_source_strenght_1000_different_angles",
-        "base": {
-            "ANGULAR_JITTER_DEG": 10.0,
-            "BACKGROUND_MEAN_PER_SECOND": 1000.0,
-            "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
-            "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
-        },
-        "sweep": {
-            "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-            "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
-        },
-    },
-    {
-        "name": "background_1000_source_strenght_2000_different_angles",
-        "base": {
-            "ANGULAR_JITTER_DEG": 10.0,
-            "BACKGROUND_MEAN_PER_SECOND": 1000.0,
-            "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
-            "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2000.0,
-        },
-        "sweep": {
-            "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-            "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
-        },
-    },
-    {
-        "name": "background_1000_source_strenght_5000_different_angles",
-        "base": {
-            "ANGULAR_JITTER_DEG": 10.0,
-            "BACKGROUND_MEAN_PER_SECOND": 1000.0,
-            "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
-            "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
-        },
-        "sweep": {
-            "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-            "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
-        },
-    },
-    {
-        "name": "background_5000_source_strenght_1000_different_angles",
-        "base": {
-            "ANGULAR_JITTER_DEG": 10.0,
-            "BACKGROUND_MEAN_PER_SECOND": 5000.0,
-            "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
-            "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
-            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
-        },
-        "sweep": {
-            "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-            "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
-        },
-    },
-    {
-        "name": "background_5000_source_strenght_2500_different_angles",
-        "base": {
-            "ANGULAR_JITTER_DEG": 10.0,
-            "BACKGROUND_MEAN_PER_SECOND": 5000.0,
-            "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
-            "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
-            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2500.0,
-        },
-        "sweep": {
-            "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-            "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
-        },
-    },
-    {
-        "name": "background_5000_source_strenght_5000_different_angles",
-        "base": {
-            "ANGULAR_JITTER_DEG": 10.0,
-            "BACKGROUND_MEAN_PER_SECOND": 5000.0,
-            "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
-            "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
-            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
-        },
-        "sweep": {
-            "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-            "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
-        },
-    },
-    {
-        "name": "background_5000_source_strenght_10000_different_angles",
-        "base": {
-            "ANGULAR_JITTER_DEG": 10.0,
-            "BACKGROUND_MEAN_PER_SECOND": 5000.0,
-            "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
-            "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
-            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 10000.0,
-        },
-        "sweep": {
-            "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-            "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
-        },
-    },
+    # {
+    #     "name": "background_1000_source_strenght_500_different_angles",
+    #     "base": {
+    #         "ANGULAR_JITTER_DEG": 10.0,
+    #         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
+    #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 500.0,
+    #     },
+    #     "sweep": {
+    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
+    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #     },
+    # },
+    # {
+    #     "name": "background_1000_source_strenght_1000_different_angles",
+    #     "base": {
+    #         "ANGULAR_JITTER_DEG": 10.0,
+    #         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
+    #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
+    #     },
+    #     "sweep": {
+    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
+    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #     },
+    # },
+    # {
+    #     "name": "background_1000_source_strenght_2000_different_angles",
+    #     "base": {
+    #         "ANGULAR_JITTER_DEG": 10.0,
+    #         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
+    #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2000.0,
+    #     },
+    #     "sweep": {
+    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
+    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #     },
+    # },
+    # {
+    #     "name": "background_1000_source_strenght_5000_different_angles",
+    #     "base": {
+    #         "ANGULAR_JITTER_DEG": 10.0,
+    #         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
+    #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
+    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
+    #     },
+    #     "sweep": {
+    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
+    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #     },
+    # },
+    # {
+    #     "name": "background_5000_source_strenght_1000_different_angles",
+    #     "base": {
+    #         "ANGULAR_JITTER_DEG": 10.0,
+    #         "BACKGROUND_MEAN_PER_SECOND": 5000.0,
+    #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
+    #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
+    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
+    #     },
+    #     "sweep": {
+    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
+    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #     },
+    # },
+    # {
+    #     "name": "background_5000_source_strenght_2500_different_angles",
+    #     "base": {
+    #         "ANGULAR_JITTER_DEG": 10.0,
+    #         "BACKGROUND_MEAN_PER_SECOND": 5000.0,
+    #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
+    #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
+    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2500.0,
+    #     },
+    #     "sweep": {
+    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
+    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #     },
+    # },
+    # {
+    #     "name": "background_5000_source_strenght_5000_different_angles",
+    #     "base": {
+    #         "ANGULAR_JITTER_DEG": 10.0,
+    #         "BACKGROUND_MEAN_PER_SECOND": 5000.0,
+    #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
+    #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
+    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
+    #     },
+    #     "sweep": {
+    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
+    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #     },
+    # },
+    # {
+    #     "name": "background_5000_source_strenght_10000_different_angles",
+    #     "base": {
+    #         "ANGULAR_JITTER_DEG": 10.0,
+    #         "BACKGROUND_MEAN_PER_SECOND": 5000.0,
+    #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
+    #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
+    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 10000.0,
+    #     },
+    #     "sweep": {
+    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
+    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #     },
+    # },
 ]
 
 
@@ -268,7 +337,7 @@ FIXED_OVERRIDES = {
 }
 
 
-OUTPUT_CSV = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations" / "different_background_sources_strenghts_different_angles.csv"
+OUTPUT_CSV = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations" / "ass_background_mismatch.csv"
 
 
 def sweep_parameter_columns():
@@ -278,6 +347,10 @@ def sweep_parameter_columns():
         for key in [*group.get("base", {}), *group.get("sweep", {})]:
             if key not in columns:
                 columns.append(key)
+        for case in group.get("cases", []):
+            for key in case:
+                if key not in columns:
+                    columns.append(key)
     return columns
 
 
@@ -286,6 +359,20 @@ def iter_parameter_cases(sweep_groups):
     for group in sweep_groups:
         group_name = group["name"]
         base_overrides = {**SWEEP_DEFAULTS, **dict(group.get("base", {}))}
+        explicit_cases = list(group.get("cases", []))
+        if explicit_cases:
+            for case_overrides in explicit_cases:
+                keys = list(case_overrides)
+                value_lists = [
+                    value if isinstance(value, list) else [value]
+                    for value in case_overrides.values()
+                ]
+                for values in product(*value_lists):
+                    expanded_case = dict(zip(keys, values))
+                    display_parameters = {**dict(group.get("base", {})), **expanded_case}
+                    yield group_name, {**base_overrides, **expanded_case}, display_parameters
+            continue
+
         sweep_values = dict(group.get("sweep", {}))
         keys = list(sweep_values)
 
@@ -344,6 +431,7 @@ def summarize_run(case_index, group_name, parameter_overrides, experiment, elaps
     """Flatten one run into a CSV row."""
     dataset = experiment["dataset"]
     result = experiment["result"]
+    config = experiment["config"]
     localization = experiment["localization_metrics"]
     estimated_distances = experiment["estimated_distance_summary"]
 
@@ -357,6 +445,10 @@ def summarize_run(case_index, group_name, parameter_overrides, experiment, elaps
         "case_index": int(case_index),
         "sweep_group": group_name,
         "elapsed_seconds": float(elapsed_seconds),
+        "background_source_ratio": float(
+            config["BACKGROUND_MEAN_PER_SECOND"]
+            / config["PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND"]
+        ),
         "estimated_peak_activity": float(first_estimated_activity),
         "estimated_peak_error_m": float(estimated_distances["distance_mean"]),
         "estimated_total_error_m": float(estimated_distances["total_true_to_estimated_distance"]),
@@ -373,7 +465,6 @@ def summarize_run(case_index, group_name, parameter_overrides, experiment, elaps
     row.update(_position_columns("estimated_peak", first_estimated_position))
 
     row["fixed_overrides"] = format_fixed_overrides()
-    config = experiment["config"]
     for key in sweep_parameter_columns():
         row[key] = _csv_value(config[key])
 
@@ -390,6 +481,7 @@ def write_rows(path, rows):
         "sweep_group",
         "fixed_overrides",
         *sweep_parameter_columns(),
+        "background_source_ratio",
         "elapsed_seconds",
         "true_source_x",
         "true_source_y",
