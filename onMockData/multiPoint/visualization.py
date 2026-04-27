@@ -150,6 +150,7 @@ def visualize_mlem_activity(
     axis_limits=None,
     activity_color_limits=None,
     activity_size_reference=None,
+    frame_label=None,
     highlight_used_trajectory=True,
 ):
     """Show the strongest voxels from an ML-EM activity reconstruction."""
@@ -314,7 +315,10 @@ def visualize_mlem_activity(
     else:
         set_3d_axis_limits(ax, axis_limits)
 
-    ax.set_title("ML-EM activity reconstruction")
+    title = "ML-EM activity reconstruction"
+    if frame_label is not None:
+        title = f"{title}\n{frame_label}"
+    ax.set_title(title)
     ax.set_xlabel("x world [m]")
     ax.set_ylabel("y world [m]")
     ax.set_zlabel("z world [m]")

@@ -46,7 +46,7 @@ def generate_synthetic_dataset(
         - "towards_target": re-aim detector towards scan_center each measurement.
 
     trajectory_mode:
-        - "grid_scan": one-sided left/right, up/down scan.
+        - "grid": one-sided left/right, up/down scan.
         - "around_center": detector positions orbit around scan_center.
 
     fixed_view_direction:

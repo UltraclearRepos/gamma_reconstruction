@@ -229,17 +229,17 @@ def main():
     GRID_SIZE = 13
 
     # Mock detector trajectory.
-    TRAJECTORY_MODE = "grid_scan"  # "grid_scan" or "around_center"
+    TRAJECTORY_MODE = "grid"  # "grid" or "around_center"
     ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target" | "towards_target" recommended for TRAJECTORY_MODE="around_center"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
     FIXED_SWEEP_Z_DEG = 20.0  # fixed mode only: left/right viewing sweep around world Z axis.
     FIXED_SWEEP_X_DEG = -20.0  # fixed mode only: up/down viewing sweep around world X axis.
     SCAN_CENTER = tuple((np.array(SEARCH_MIN) + np.array(SEARCH_MAX)) / 2.0)  # Center of scan path; should match reconstruction volume center.
     ANGULAR_JITTER_DEG = 3.0  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-    LATERAL_SPAN = 0.60  # grid_scan only: max left/right position offset from SCAN_CENTER [m].
-    VERTICAL_SPAN = 0.36  # grid_scan only: max up/down position offset from SCAN_CENTER [m].
-    BASE_DISTANCE = 0.65  # grid_scan only: nominal detector distance from SCAN_CENTER [m].
-    DISTANCE_SPAN = 0.18  # grid_scan only: sinusoidal variation of detector distance [m].
+    LATERAL_SPAN = 0.60  # grid only: max left/right position offset from SCAN_CENTER [m].
+    VERTICAL_SPAN = 0.36  # grid only: max up/down position offset from SCAN_CENTER [m].
+    BASE_DISTANCE = 0.65  # grid only: nominal detector distance from SCAN_CENTER [m].
+    DISTANCE_SPAN = 0.18  # grid only: sinusoidal variation of detector distance [m].
     ORBIT_RADIUS = 1.2  # around_center only: nominal radius of detector orbit around SCAN_CENTER [m].
     ORBIT_RADIUS_SPAN = 0  # around_center only: sinusoidal radius variation during orbit [m].
     ORBIT_ANGLE_SPAN_DEG = 360.0  # around_center only: covered orbit angle; 360 means full circle.

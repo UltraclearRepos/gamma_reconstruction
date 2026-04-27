@@ -106,7 +106,7 @@ def make_detector_trajectory(
     scan_center,
     num_measurements,
     rng,
-    trajectory_mode="grid_scan",
+    trajectory_mode="grid",
     angular_jitter_deg=2.0,
     lateral_span=0.45,
     vertical_span=0.28,
@@ -126,7 +126,7 @@ def make_detector_trajectory(
     Generate a detector trajectory around the scan center.
 
     trajectory_mode:
-        - "grid_scan": one-sided left/right, up/down scan at several distances.
+        - "grid": one-sided left/right, up/down scan at several distances.
         - "around_center": orbit around scan_center in the XY plane.
 
     The nominal viewing direction is either constant, or it can be re-aimed
@@ -140,7 +140,7 @@ def make_detector_trajectory(
     vertical_axis = np.array([0.0, 0.0, 1.0], dtype=float)
     nominal_view_direction = -standoff_axis
 
-    trajectory_mode = str(trajectory_mode or "grid_scan").strip().lower().replace("-", "_")
+    trajectory_mode = str(trajectory_mode or "grid").strip().lower().replace("-", "_")
     orientation_mode = str(orientation_mode or "fixed").strip().lower().replace("-", "_")
     if fixed_view_direction is not None:
         fixed_view_direction = normalize(np.asarray(fixed_view_direction, dtype=float))
@@ -163,7 +163,7 @@ def make_detector_trajectory(
     else:
         raise ValueError("orientation_mode must be 'fixed' or 'towards_target'. Got: " f"{orientation_mode!r}")
 
-    if trajectory_mode == "grid_scan":
+    if trajectory_mode == "grid":
         num_rows = max(1, int(round(math.sqrt(max(num_measurements, 1) / 2.0))))
         num_columns = max(1, int(math.ceil(num_measurements / num_rows)))
         vertical_positions = (
@@ -176,12 +176,12 @@ def make_detector_trajectory(
         angle_denominator = num_measurements if full_orbit else max(num_measurements - 1, 1)
     else:
         raise ValueError(
-            "trajectory_mode must be 'grid_scan' or 'around_center'. Got: "
+            "trajectory_mode must be 'grid' or 'around_center'. Got: "
             f"{trajectory_mode!r}"
         )
 
     for i in range(num_measurements):
-        if trajectory_mode == "grid_scan":
+        if trajectory_mode == "grid":
             row = i // num_columns
             column = i % num_columns
             column_fraction = 0.5 if num_columns == 1 else column / (num_columns - 1)

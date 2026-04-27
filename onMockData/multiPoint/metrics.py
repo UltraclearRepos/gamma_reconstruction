@@ -157,3 +157,119 @@ def print_activity_localization_summary(summary):
             f"p90={source_distances['distance_p90']:.4f}, "
             f"max={source_distances['distance_max']:.4f}"
         )
+
+
+def summarize_estimated_source_distances(true_sources, estimated_sources):
+    """Greedily match every true source to the nearest unused estimated peak."""
+    true_positions = _true_source_positions(true_sources)
+    estimated_positions = np.array(
+        [source["position"] for source in estimated_sources],
+        dtype=float,
+    )
+
+    if len(true_positions) == 0:
+        raise ValueError("true_sources must not be empty.")
+
+    if len(estimated_positions) == 0:
+        return {
+            "true_source_count": int(len(true_positions)),
+            "estimated_source_count": 0,
+            "matched_count": 0,
+            "per_true_source": [],
+            "unmatched_true_indices": list(range(len(true_positions))),
+            "unmatched_estimated_indices": [],
+            "total_true_to_estimated_distance": np.nan,
+            "distance_min": np.nan,
+            "distance_mean": np.nan,
+            "distance_max": np.nan,
+        }
+
+    deltas = true_positions[:, None, :] - estimated_positions[None, :, :]
+    distance_matrix = np.sqrt(np.sum(deltas * deltas, axis=2))
+    true_count, estimated_count = distance_matrix.shape
+    per_true_source = []
+    matched_true_indices = set()
+    matched_estimated_indices = set()
+    available_estimated_indices = list(range(estimated_count))
+
+    for true_index in range(true_count):
+        if not available_estimated_indices:
+            break
+
+        available_distances = distance_matrix[true_index, available_estimated_indices]
+        nearest_available_index = int(np.argmin(available_distances))
+        estimated_index = available_estimated_indices.pop(nearest_available_index)
+
+        matched_true_indices.add(true_index)
+        matched_estimated_indices.add(estimated_index)
+        estimated_source = estimated_sources[estimated_index]
+        per_true_source.append(
+            {
+                "true_index": int(true_index),
+                "estimated_index": int(estimated_index),
+                "true_position": true_positions[true_index].copy(),
+                "estimated_position": estimated_positions[estimated_index].copy(),
+                "estimated_activity": float(estimated_source["activity"]),
+                "distance": float(distance_matrix[true_index, estimated_index]),
+            }
+        )
+
+    distances = np.array([item["distance"] for item in per_true_source], dtype=float)
+    return {
+        "true_source_count": int(true_count),
+        "estimated_source_count": int(estimated_count),
+        "matched_count": int(len(per_true_source)),
+        "per_true_source": per_true_source,
+        "unmatched_true_indices": [
+            index for index in range(true_count) if index not in matched_true_indices
+        ],
+        "unmatched_estimated_indices": [
+            index for index in range(estimated_count) if index not in matched_estimated_indices
+        ],
+        "total_true_to_estimated_distance": float(np.sum(distances)),
+        "distance_min": float(np.min(distances)),
+        "distance_mean": float(np.mean(distances)),
+        "distance_max": float(np.max(distances)),
+    }
+
+
+def print_estimated_source_distance_summary(summary):
+    """Print nearest estimated peak distance for every true source."""
+    print()
+    print("Estimated peak -> true source distances:")
+    print(
+        " compared sources:          "
+        f"{summary['true_source_count']} true, "
+        f"{summary['estimated_source_count']} estimated"
+    )
+    print(f" unique matched pairs:       {summary['matched_count']}")
+
+    if not summary["per_true_source"]:
+        print(" no estimated peaks to compare")
+        return
+
+    if summary["true_source_count"] == 1:
+        item = summary["per_true_source"][0]
+        estimated_number = item["estimated_index"] + 1
+        print(
+            f"  S1 -> nearest P{estimated_number}: "
+            f"distance={item['distance']:.4f} m, "
+            f"true={np.round(item['true_position'], 4).tolist()}, "
+            f"estimated={np.round(item['estimated_position'], 4).tolist()}, "
+            f"activity={item['estimated_activity']:.2f}"
+        )
+
+    print(
+        " total true->estimate distance [m]: "
+        f"{summary['total_true_to_estimated_distance']:.4f}"
+    )
+    if summary["true_source_count"] == 1:
+        return
+
+    print(" multiple true sources: only total unique-match distance is shown")
+    if summary["unmatched_true_indices"]:
+        labels = [f"S{index + 1}" for index in summary["unmatched_true_indices"]]
+        print(f" unmatched true sources:    {', '.join(labels)}")
+    if summary["unmatched_estimated_indices"]:
+        labels = [f"P{index + 1}" for index in summary["unmatched_estimated_indices"]]
+        print(f" unmatched estimated peaks: {', '.join(labels)}")

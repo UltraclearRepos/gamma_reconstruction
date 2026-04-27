@@ -157,6 +157,7 @@ def mlem_reconstruction(
     activity = np.full(len(candidate_positions), max(initial_activity, EPS), dtype=float)
 
     history = []
+    activity_history = []
     for iteration in range(1, num_iterations + 1):
         predicted_counts = predict_counts_from_activity(
             backgrounds_flat=backgrounds_flat,
@@ -183,6 +184,7 @@ def mlem_reconstruction(
                     "best_position": candidate_positions[best_index].copy(),
                 }
             )
+            activity_history.append(activity.copy())
 
     estimated_sources = pick_activity_peaks(
         candidate_positions=candidate_positions,
@@ -194,6 +196,7 @@ def mlem_reconstruction(
     return {
         "candidate_positions": candidate_positions,
         "activity": activity,
+        "activity_history": [snapshot.copy() for snapshot in activity_history],
         "estimated_sources": estimated_sources,
         "history": history,
     }

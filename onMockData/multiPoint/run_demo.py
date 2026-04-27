@@ -11,14 +11,201 @@ ON_MOCK_DATA_DIR = Path(__file__).resolve().parents[1]
 if str(ON_MOCK_DATA_DIR) not in sys.path:
     sys.path.insert(0, str(ON_MOCK_DATA_DIR))
 
-from reconstruction_algorithms import reconstruct_sources
-from metrics import print_activity_localization_summary, summarize_activity_localization
+from reconstruction_algorithms import pick_activity_peaks, reconstruct_sources
+from metrics import (
+    print_activity_localization_summary,
+    print_estimated_source_distance_summary,
+    summarize_activity_localization,
+    summarize_estimated_source_distances,
+)
 from simulation import generate_synthetic_dataset
 from visualization import (
+    create_gif_from_frames,
     visualize_history_score,
     visualize_mlem_activity,
     visualize_multi_source_scene,
 )
+
+
+def make_default_config():
+    """Return default settings for the synthetic multi-point demo."""
+    search_min = (-0.5, -0.5, -0.5)
+    search_max = (0.5, 0.5, 0.5)
+
+    return {
+        # Reconstruction method.
+        "reconstruction_method": "mlem",
+
+        # Mock data generation.
+        "SEED": 11,
+        "NUM_MEASUREMENTS": 50,
+        "TRUE_SOURCE_SPECS": [
+            {"position": (0.18, -0.2, 0.2), "relative_strength": 1.0},
+            # {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
+            # {"position": (0.34, -0.07, 0.38), "relative_strength": 0.45},
+        ],
+        "NUM_CHANNELS": 16,
+        "DIODE_PITCH": 0.006,
+        "MEASUREMENT_DURATION_SECONDS": 1.0,
+        "BACKGROUND_MEAN_PER_SECOND": 10000.0,
+        "BACKGROUND_CHANNEL_STD_PER_SECOND": 200.0,
+        "CHANNEL_SCALE_MEAN": 1.0,
+        "CHANNEL_SCALE_STD": 0.08,
+        "GENERATION_K": 4.5,
+        "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,  
+
+        # Assumed reconstruction model.
+        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 10000.0,
+        "ASSUMED_CHANNEL_SCALE": 1.0,
+        "ASSUMED_K": 4.5,
+
+        # Reconstruction volume.
+        "SEARCH_MIN": search_min,
+        "SEARCH_MAX": search_max,
+        "GRID_SIZE": 13,
+
+        # Mock detector trajectory.
+        "TRAJECTORY_MODE": "grid",
+        "LATERAL_SPAN": 0.60,
+        "VERTICAL_SPAN": 0.36,
+        "BASE_DISTANCE": 1,
+        "DISTANCE_SPAN": 0.18,
+        "ORBIT_RADIUS": 1.3,
+        "ORBIT_RADIUS_SPAN": 0,
+        "ORBIT_ANGLE_SPAN_DEG": 360.0,
+        "ORBIT_START_ANGLE_DEG": 0.0,
+        "ORBIT_VERTICAL_SPAN": 0.0,
+
+        "ORIENTATION_MODE": "fixed",
+        "FIXED_VIEW_DIRECTION": (0, 1, 0),
+        "FIXED_SWEEP_Z_DEG": 45.0,
+        "FIXED_SWEEP_X_DEG": -45.0,
+        "SCAN_CENTER": tuple((np.array(search_min) + np.array(search_max)) / 2.0),
+        "ANGULAR_JITTER_DEG": 20.0,
+
+        # Reconstruction algorithm.
+        "NUM_ITERATIONS": 10000,
+        "HISTORY_INTERVAL": 1000,
+        "MAX_SOURCES_TO_REPORT": 1,
+        "MIN_SOURCE_DISTANCE": 0.08,
+
+        # Localization metric.
+        "ACTIVITY_MAX_RELATIVE_DROP": 0.5,
+
+        # Visualization output.
+        "PRINT_GENERATED_COUNTS_TABLE": True,
+        "UPDATE_FRAME_MAX_VOXELS": 1000,
+        "GIF_FPS": 1.0,
+        "AXIS_LIMITS_3D": (
+            (-1, 1),
+            (-1, 1),
+            (-1, 1),
+        ),
+    }
+
+
+def build_config(overrides=None):
+    """Merge a small override dict into the demo defaults."""
+    config = make_default_config()
+    if overrides:
+        unknown_keys = sorted(set(overrides) - set(config))
+        if unknown_keys:
+            raise KeyError(f"Unknown config keys: {unknown_keys}")
+        config.update(overrides)
+
+    if "SCAN_CENTER" not in (overrides or {}):
+        config["SCAN_CENTER"] = tuple(
+            (np.array(config["SEARCH_MIN"]) + np.array(config["SEARCH_MAX"])) / 2.0
+        )
+
+    return config
+
+
+def run_experiment(overrides=None):
+    """Generate one dataset, run reconstruction, and return metrics."""
+    config = build_config(overrides)
+
+    dataset = generate_synthetic_dataset(
+        num_measurements=config["NUM_MEASUREMENTS"],
+        seed=config["SEED"],
+        orientation_mode=config["ORIENTATION_MODE"],
+        fixed_view_direction=config["FIXED_VIEW_DIRECTION"],
+        source_specs=config["TRUE_SOURCE_SPECS"],
+        num_channels=config["NUM_CHANNELS"],
+        diode_pitch=config["DIODE_PITCH"],
+        background_mean_per_second=config["BACKGROUND_MEAN_PER_SECOND"],
+        background_channel_std_per_second=config["BACKGROUND_CHANNEL_STD_PER_SECOND"],
+        channel_scale_mean=config["CHANNEL_SCALE_MEAN"],
+        channel_scale_std=config["CHANNEL_SCALE_STD"],
+        generation_k=config["GENERATION_K"],
+        peak_total_source_signal_per_second=config["PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND"],
+        measurement_duration_seconds=config["MEASUREMENT_DURATION_SECONDS"],
+        scan_center=config["SCAN_CENTER"],
+        trajectory_mode=config["TRAJECTORY_MODE"],
+        angular_jitter_deg=config["ANGULAR_JITTER_DEG"],
+        lateral_span=config["LATERAL_SPAN"],
+        vertical_span=config["VERTICAL_SPAN"],
+        base_distance=config["BASE_DISTANCE"],
+        distance_span=config["DISTANCE_SPAN"],
+        orbit_radius=config["ORBIT_RADIUS"],
+        orbit_radius_span=config["ORBIT_RADIUS_SPAN"],
+        orbit_angle_span_deg=config["ORBIT_ANGLE_SPAN_DEG"],
+        orbit_start_angle_deg=config["ORBIT_START_ANGLE_DEG"],
+        orbit_vertical_span=config["ORBIT_VERTICAL_SPAN"],
+        fixed_sweep_z_deg=config["FIXED_SWEEP_Z_DEG"],
+        fixed_sweep_x_deg=config["FIXED_SWEEP_X_DEG"],
+    )
+
+    num_channels = dataset["counts"].shape[1]
+    assumed_model = {
+        "assumed_backgrounds": np.full(
+            num_channels,
+            config["ASSUMED_BACKGROUND_MEAN_PER_SECOND"]
+            * config["MEASUREMENT_DURATION_SECONDS"],
+            dtype=float,
+        ),
+        "assumed_channel_scales": np.full(
+            num_channels,
+            config["ASSUMED_CHANNEL_SCALE"],
+            dtype=float,
+        ),
+        "assumed_k": config["ASSUMED_K"],
+    }
+
+    result = reconstruct_sources(
+        counts=dataset["counts"],
+        geometry=dataset["geometry"],
+        rotations=dataset["rotations"],
+        translations=dataset["translations"],
+        **assumed_model,
+        search_min=config["SEARCH_MIN"],
+        search_max=config["SEARCH_MAX"],
+        method=config["reconstruction_method"],
+        grid_size=config["GRID_SIZE"],
+        num_iterations=config["NUM_ITERATIONS"],
+        history_interval=config["HISTORY_INTERVAL"],
+        max_sources=config["MAX_SOURCES_TO_REPORT"],
+        min_source_distance=config["MIN_SOURCE_DISTANCE"],
+    )
+
+    localization_metrics = summarize_activity_localization(
+        voxel_positions=result["candidate_positions"],
+        activity=result["activity"],
+        true_sources=dataset["true_sources"],
+        max_relative_drop=config["ACTIVITY_MAX_RELATIVE_DROP"],
+    )
+    estimated_distance_summary = summarize_estimated_source_distances(
+        true_sources=dataset["true_sources"],
+        estimated_sources=result["estimated_sources"],
+    )
+
+    return {
+        "config": config,
+        "dataset": dataset,
+        "result": result,
+        "localization_metrics": localization_metrics,
+        "estimated_distance_summary": estimated_distance_summary,
+    }
 
 
 def print_summary(dataset):
@@ -71,7 +258,7 @@ def print_generated_counts_table(dataset):
         print(" ".join(row))
 
 
-def print_reconstruction_summary(method, result):
+def print_reconstruction_summary(method, result, true_sources, relative_drop):
     """Print compact ML-EM reconstruction output."""
     print()
     print(f"Reconstruction method:       {method}")
@@ -86,7 +273,10 @@ def print_reconstruction_summary(method, result):
 
     print()
     print("Reconstruction history:")
-    for index, item in enumerate(result["history"], start=1):
+    for index, (item, activity_snapshot) in enumerate(
+        zip(result["history"], result["activity_history"]),
+        start=1,
+    ):
         print(f" step={index}")
         for key, value in item.items():
             if isinstance(value, np.ndarray):
@@ -95,6 +285,19 @@ def print_reconstruction_summary(method, result):
                 print(f"  {key}: {value:.4f}")
             else:
                 print(f"  {key}: {value}")
+        metrics = summarize_activity_localization(
+            voxel_positions=result["candidate_positions"],
+            activity=activity_snapshot,
+            true_sources=true_sources,
+            max_relative_drop=relative_drop,
+        )
+        print(
+            "  "
+            f"threshold_metric: selected_voxels={metrics['selected_voxel_count']}, "
+            f"mean={metrics['all_source_distance_mean']:.4f} m, "
+            f"wmean={metrics['all_source_distance_weighted_mean']:.4f} m, "
+            f"p90={metrics['all_source_distance_p90']:.4f} m"
+        )
 
 
 def print_localization_metrics(result, true_sources, relative_drop):
@@ -109,147 +312,42 @@ def print_localization_metrics(result, true_sources, relative_drop):
 
 
 def main():
-    # Change only this value while testing multi-source reconstruction methods.
-    # Currently available: "mlem".
-    reconstruction_method = "mlem"
+    experiment = run_experiment()
+    config = experiment["config"]
+    dataset = experiment["dataset"]
+    result = experiment["result"]
 
-    # Mock data generation.
-    SEED = 11
-    NUM_MEASUREMENTS = 50
-    TRUE_SOURCE_SPECS = [
-        {"position": (0.18, -0.2, 0.2), "relative_strength": 1.0},
-        # {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
-        # {"position": (0.34, -0.07, 0.38), "relative_strength": 0.45},
-    ]
-    NUM_CHANNELS = 16
-    DIODE_PITCH = 0.006
-    MEASUREMENT_DURATION_SECONDS = 10.0
-    BACKGROUND_MEAN_PER_SECOND = 0.0
-    BACKGROUND_CHANNEL_STD_PER_SECOND = 0.0
-    CHANNEL_SCALE_MEAN = 1.0
-    CHANNEL_SCALE_STD = 0.08
-    GENERATION_K = 4.5  # >= 0; sensible ~0..10. Higher = narrower angular response, so off-axis sources give fewer counts.
-    PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND = 5000.0
-
-    # Reconstruction volume.
-    SEARCH_MIN = (-0.55, -0.55, -0.55)
-    SEARCH_MAX = (0.55, 0.55, 0.55)
-    GRID_SIZE = 13
-
-    # Mock detector trajectory.
-    TRAJECTORY_MODE = "grid_scan"  # "grid_scan" or "around_center"
-    ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target" | "towards_target" recommended for TRAJECTORY_MODE="around_center"
-    FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
-    FIXED_SWEEP_Z_DEG = 0.0  # fixed mode only: left/right viewing sweep around world Z axis.
-    FIXED_SWEEP_X_DEG = 0.0  # fixed mode only: up/down viewing sweep around world X axis.
-    SCAN_CENTER = tuple((np.array(SEARCH_MIN) + np.array(SEARCH_MAX)) / 2.0)  # Center of scan path; should match reconstruction volume center.
-    ANGULAR_JITTER_DEG = 3.0  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-    LATERAL_SPAN = 0.60  # grid_scan only: max left/right position offset from SCAN_CENTER [m].
-    VERTICAL_SPAN = 0.36  # grid_scan only: max up/down position offset from SCAN_CENTER [m].
-    BASE_DISTANCE = 0.65  # grid_scan only: nominal detector distance from SCAN_CENTER [m].
-    DISTANCE_SPAN = 0.18  # grid_scan only: sinusoidal variation of detector distance [m].
-    ORBIT_RADIUS = 1.2  # around_center only: nominal radius of detector orbit around SCAN_CENTER [m].
-    ORBIT_RADIUS_SPAN = 0  # around_center only: sinusoidal radius variation during orbit [m].
-    ORBIT_ANGLE_SPAN_DEG = 360.0  # around_center only: covered orbit angle; 360 means full circle.
-    ORBIT_START_ANGLE_DEG = 0.0  # around_center only: starting angle of orbit in XY plane.
-    ORBIT_VERTICAL_SPAN = 0.2  # around_center only: sinusoidal up/down motion during orbit [m].
-
-    # Assumed reconstruction model.
-    ASSUMED_BACKGROUND_MEAN_PER_SECOND = BACKGROUND_MEAN_PER_SECOND
-    ASSUMED_CHANNEL_SCALE = CHANNEL_SCALE_MEAN
-    ASSUMED_K = GENERATION_K
-
-    # Reconstruction algorithm.
-    NUM_ITERATIONS = 10000
-    HISTORY_INTERVAL = 1000
-    MAX_SOURCES_TO_REPORT = 1
-    MIN_SOURCE_DISTANCE = 0.08
-
-    # Localization metric.
-    ACTIVITY_MAX_RELATIVE_DROP = 0.5
-
-    # Visualization output.
-    PRINT_GENERATED_COUNTS_TABLE = True
-    AXIS_LIMITS_3D = (
-        (-1, 1),
-        (-1, 1),
-        (-1, 1),
-    )
-
-    dataset = generate_synthetic_dataset(
-        num_measurements=NUM_MEASUREMENTS,
-        seed=SEED,
-        orientation_mode=ORIENTATION_MODE,
-        fixed_view_direction=FIXED_VIEW_DIRECTION,
-        source_specs=TRUE_SOURCE_SPECS,
-        num_channels=NUM_CHANNELS,
-        diode_pitch=DIODE_PITCH,
-        background_mean_per_second=BACKGROUND_MEAN_PER_SECOND,
-        background_channel_std_per_second=BACKGROUND_CHANNEL_STD_PER_SECOND,
-        channel_scale_mean=CHANNEL_SCALE_MEAN,
-        channel_scale_std=CHANNEL_SCALE_STD,
-        generation_k=GENERATION_K,
-        peak_total_source_signal_per_second=PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND,
-        measurement_duration_seconds=MEASUREMENT_DURATION_SECONDS,
-        scan_center=SCAN_CENTER,
-        trajectory_mode=TRAJECTORY_MODE,
-        angular_jitter_deg=ANGULAR_JITTER_DEG,
-        lateral_span=LATERAL_SPAN,
-        vertical_span=VERTICAL_SPAN,
-        base_distance=BASE_DISTANCE,
-        distance_span=DISTANCE_SPAN,
-        orbit_radius=ORBIT_RADIUS,
-        orbit_radius_span=ORBIT_RADIUS_SPAN,
-        orbit_angle_span_deg=ORBIT_ANGLE_SPAN_DEG,
-        orbit_start_angle_deg=ORBIT_START_ANGLE_DEG,
-        orbit_vertical_span=ORBIT_VERTICAL_SPAN,
-        fixed_sweep_z_deg=FIXED_SWEEP_Z_DEG,
-        fixed_sweep_x_deg=FIXED_SWEEP_X_DEG,
-    )
     print_summary(dataset)
-    if PRINT_GENERATED_COUNTS_TABLE:
+    if config["PRINT_GENERATED_COUNTS_TABLE"]:
         print_generated_counts_table(dataset)
-
-    num_channels = dataset["counts"].shape[1]
-
-    assumed_model = {
-        "assumed_backgrounds": np.full(
-            num_channels,
-            ASSUMED_BACKGROUND_MEAN_PER_SECOND * MEASUREMENT_DURATION_SECONDS,
-            dtype=float,
-        ),
-        "assumed_channel_scales": np.full(num_channels, ASSUMED_CHANNEL_SCALE, dtype=float),
-        "assumed_k": ASSUMED_K,
-    }
-
-    result = reconstruct_sources(
-        counts=dataset["counts"],
-        geometry=dataset["geometry"],
-        rotations=dataset["rotations"],
-        translations=dataset["translations"],
-        **assumed_model,
-        search_min=SEARCH_MIN,
-        search_max=SEARCH_MAX,
-        method=reconstruction_method,
-        grid_size=GRID_SIZE,
-        num_iterations=NUM_ITERATIONS,
-        history_interval=HISTORY_INTERVAL,
-        max_sources=MAX_SOURCES_TO_REPORT,
-        min_source_distance=MIN_SOURCE_DISTANCE,
+    print_reconstruction_summary(
+        method=config["reconstruction_method"],
+        result=result,
+        true_sources=dataset["true_sources"],
+        relative_drop=config["ACTIVITY_MAX_RELATIVE_DROP"],
     )
-    print_reconstruction_summary(reconstruction_method, result)
     print_localization_metrics(
         result=result,
         true_sources=dataset["true_sources"],
-        relative_drop=ACTIVITY_MAX_RELATIVE_DROP,
+        relative_drop=config["ACTIVITY_MAX_RELATIVE_DROP"],
     )
 
+    print_estimated_source_distance_summary(experiment["estimated_distance_summary"])
+
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
+    history_3d_dir = output_dir / "mlem_activity_history_3d"
+    history_3d_dir.mkdir(parents=True, exist_ok=True)
+    max_activity_for_visualization = max(
+        float(np.max(activity_snapshot))
+        for activity_snapshot in result["activity_history"]
+    )
+    ACTIVITY_COLOR_LIMITS = (0.0, float(np.log1p(max(max_activity_for_visualization, 0.0))))
+
     visualize_multi_source_scene(
         dataset,
         save_path=output_dir / "multi_source_scene.png",
         show=False,
-        axis_limits=AXIS_LIMITS_3D,
+        axis_limits=config["AXIS_LIMITS_3D"],
     )
     visualize_mlem_activity(
         dataset,
@@ -258,8 +356,10 @@ def main():
         estimated_sources=result["estimated_sources"],
         save_path=output_dir / "mlem_activity_reconstruction.png",
         show=False,
-        axis_limits=AXIS_LIMITS_3D,
+        axis_limits=config["AXIS_LIMITS_3D"],
         highlight_used_trajectory=False,
+        activity_color_limits=ACTIVITY_COLOR_LIMITS,
+        activity_size_reference=max_activity_for_visualization,
     )
     visualize_history_score(
         result["history"],
@@ -267,11 +367,47 @@ def main():
         show=False,
     )
 
+    num_history_frames = len(result["history"])
+    for frame_index, (activity_snapshot, history_item) in enumerate(
+        zip(result["activity_history"], result["history"]),
+        start=1,
+    ):
+        estimated_sources_step = pick_activity_peaks(
+            candidate_positions=result["candidate_positions"],
+            activity=activity_snapshot,
+            max_sources=config["MAX_SOURCES_TO_REPORT"],
+            min_distance=config["MIN_SOURCE_DISTANCE"],
+        )
+        iteration = int(history_item["iteration"])
+        visualize_mlem_activity(
+            dataset,
+            candidate_positions=result["candidate_positions"],
+            activity=activity_snapshot,
+            estimated_sources=estimated_sources_step,
+            save_path=history_3d_dir / f"iteration_{iteration:06d}.png",
+            show=False,
+            max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
+            axis_limits=config["AXIS_LIMITS_3D"],
+            activity_color_limits=ACTIVITY_COLOR_LIMITS,
+            activity_size_reference=max_activity_for_visualization,
+            frame_label=f"frame {frame_index}/{num_history_frames} | iteration {iteration}",
+            highlight_used_trajectory=False,
+        )
+
+    history_gif_path = create_gif_from_frames(
+        frames_dir=history_3d_dir,
+        output_path=output_dir / "mlem_activity_history_3d.gif",
+        pattern="iteration_*.png",
+        fps=config["GIF_FPS"],
+    )
+
     print()
     print("Saved plots:")
     print(" ", output_dir / "multi_source_scene.png")
     print(" ", output_dir / "mlem_activity_reconstruction.png")
     print(" ", output_dir / "mlem_score_history.png")
+    print(" ", history_3d_dir / "iteration_000001.png ...")
+    print(" ", history_gif_path)
 
 
 if __name__ == "__main__":
