@@ -29,8 +29,8 @@ from visualization import (
 
 def make_default_config():
     """Return default settings for the synthetic multi-point demo."""
-    search_min = (-50.0, -50.0, -50.0)
-    search_max = (50.0, 50.0, 50.0)
+    search_min = (-15.0, -15.0, -15.0)
+    search_max = (15.0, 15.0, 15.0)
 
     return {
         # Reconstruction method.
@@ -40,12 +40,12 @@ def make_default_config():
         "SEED": 11,
         "NUM_MEASUREMENTS": 30,
         "TRUE_SOURCE_SPECS": [
-            {"position": (18.0, -20.0, 20.0), "relative_strength": 1.0},
+            {"position": (2.0, -5.0, 10.0), "relative_strength": 1.0},
             # {"position": (-10.0, -18.0, 16.0), "relative_strength": 0.65},
             # {"position": (34.0, -7.0, 38.0), "relative_strength": 0.45},
         ],
         "NUM_CHANNELS": 16,
-        "DIODE_PITCH": 0.6,
+        "DIODE_PITCH": 0.15875,
         "MEASUREMENT_DURATION_SECONDS": 1.0,
         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
         "BACKGROUND_CHANNEL_STD_PER_SECOND": 200.0,
@@ -66,9 +66,9 @@ def make_default_config():
 
         # Mock detector trajectory.
         "TRAJECTORY_MODE": "line",
-        "LATERAL_SPAN": 60.0,
+        "LATERAL_SPAN": 30.0,
         "VERTICAL_SPAN": 0.0,
-        "BASE_DISTANCE": 100.0,
+        "BASE_DISTANCE": 20.0,
         "DISTANCE_SPAN": 0.0,
         "ORBIT_RADIUS": 130.0,
         "ORBIT_RADIUS_SPAN": 0,
@@ -94,12 +94,12 @@ def make_default_config():
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,
-        "UPDATE_FRAME_MAX_VOXELS": 1000000,
+        "UPDATE_FRAME_MAX_VOXELS": 200,
         "GIF_FPS": 1.0,
         "AXIS_LIMITS_3D": (
-            (-100, 100),
-            (-100, 100),
-            (-100, 100),
+            (-30, 30),
+            (-30, 30),
+            (-30, 30),
         ),
     }
 

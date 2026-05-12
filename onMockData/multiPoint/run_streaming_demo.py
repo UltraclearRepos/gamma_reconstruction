@@ -214,7 +214,7 @@ def main():
         # {"position": (34.0, -7.0, 38.0), "relative_strength": 0.45},
     ]
     NUM_CHANNELS = 16
-    DIODE_PITCH = 0.6
+    DIODE_PITCH = 0.15875  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
     MEASUREMENT_DURATION_SECONDS = 10.0
     BACKGROUND_MEAN_PER_SECOND = 0.0
     BACKGROUND_CHANNEL_STD_PER_SECOND = 0.0

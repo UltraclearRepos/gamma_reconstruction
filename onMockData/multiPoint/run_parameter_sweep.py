@@ -304,7 +304,7 @@ FIXED_OVERRIDES = {
         {"position": (18.0, -20.0, 20.0), "relative_strength": 1.0},
     ],
     "NUM_CHANNELS": 16,  # Number of detector channels.
-    "DIODE_PITCH": 0.6,  # Distance between neighboring detector channels [cm].
+    "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
     "SEARCH_MIN": (-50.0, -50.0, -50.0),  # Minimum x/y/z corner of searched source position volume [cm].
     "SEARCH_MAX": (50.0, 50.0, 50.0),  # Maximum x/y/z corner of searched source position volume [cm].
     "GRID_SIZE": 13,  # ML-EM candidate grid size per axis.

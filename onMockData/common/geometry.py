@@ -80,10 +80,12 @@ def infer_detector_forward_axis(diode_normals_local):
     return np.array([0.0, 0.0, 1.0], dtype=float)
 
 
-def make_detector_geometry(num_channels=16, diode_pitch=0.6):
+def make_detector_geometry(num_channels=16, diode_pitch=0.15875):
     """
     Create a linear detector with diodes placed side by side.
 
+    diode_pitch is the center-to-center channel pitch in centimeters.
+    For adjacent channels without gaps, it is also the channel width.
     All diodes point along the local +Z axis.
     """
     positions = np.zeros((num_channels, 3), dtype=float)
@@ -98,6 +100,8 @@ def make_detector_geometry(num_channels=16, diode_pitch=0.6):
         "diode_normals_local": normals,
         "detector_forward_local": detector_forward_local,
         "diode_pitch": float(diode_pitch),
+        "channel_width": float(diode_pitch),
+        "active_length": float(num_channels * diode_pitch),
     }
 
 
