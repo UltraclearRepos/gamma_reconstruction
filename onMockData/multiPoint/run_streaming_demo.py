@@ -115,9 +115,9 @@ def print_streaming_localization_metrics(history):
             " "
             f"used_measurements={int(item['used_measurements'])}, "
             f"selected_voxels={metrics['selected_voxel_count']}, "
-            f"voxel_source_mean={metrics['all_source_distance_mean']:.4f} m, "
-            f"voxel_source_wmean={metrics['all_source_distance_weighted_mean']:.4f} m, "
-            f"voxel_source_p90={metrics['all_source_distance_p90']:.4f} m"
+            f"voxel_source_mean={metrics['all_source_distance_mean']:.4f} cm, "
+            f"voxel_source_wmean={metrics['all_source_distance_weighted_mean']:.4f} cm, "
+            f"voxel_source_p90={metrics['all_source_distance_p90']:.4f} cm"
         )
 
 
@@ -209,12 +209,12 @@ def main():
     SEED = 11
     NUM_MEASUREMENTS = 50
     TRUE_SOURCE_SPECS = [
-        {"position": (0.18, -0.2, 0.2), "relative_strength": 1.0},
-        # {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
-        # {"position": (0.34, -0.07, 0.38), "relative_strength": 0.45},
+        {"position": (18.0, -20.0, 20.0), "relative_strength": 1.0},
+        # {"position": (-10.0, -18.0, 16.0), "relative_strength": 0.65},
+        # {"position": (34.0, -7.0, 38.0), "relative_strength": 0.45},
     ]
     NUM_CHANNELS = 16
-    DIODE_PITCH = 0.006
+    DIODE_PITCH = 0.6
     MEASUREMENT_DURATION_SECONDS = 10.0
     BACKGROUND_MEAN_PER_SECOND = 0.0
     BACKGROUND_CHANNEL_STD_PER_SECOND = 0.0
@@ -224,8 +224,8 @@ def main():
     PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND = 5000.0
 
     # Reconstruction volume.
-    SEARCH_MIN = (-0.55, -0.55, -0.55)
-    SEARCH_MAX = (0.55, 0.55, 0.55)
+    SEARCH_MIN = (-55.0, -55.0, -55.0)
+    SEARCH_MAX = (55.0, 55.0, 55.0)
     GRID_SIZE = 13
 
     # Mock detector trajectory.
@@ -236,15 +236,15 @@ def main():
     FIXED_SWEEP_X_DEG = -20.0  # fixed mode only: up/down viewing sweep around world X axis.
     SCAN_CENTER = tuple((np.array(SEARCH_MIN) + np.array(SEARCH_MAX)) / 2.0)  # Center of scan path; should match reconstruction volume center.
     ANGULAR_JITTER_DEG = 3.0  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-    LATERAL_SPAN = 0.60  # grid only: max left/right position offset from SCAN_CENTER [m].
-    VERTICAL_SPAN = 0.36  # grid only: max up/down position offset from SCAN_CENTER [m].
-    BASE_DISTANCE = 0.65  # grid only: nominal detector distance from SCAN_CENTER [m].
-    DISTANCE_SPAN = 0.18  # grid only: sinusoidal variation of detector distance [m].
-    ORBIT_RADIUS = 1.2  # around_center only: nominal radius of detector orbit around SCAN_CENTER [m].
-    ORBIT_RADIUS_SPAN = 0  # around_center only: sinusoidal radius variation during orbit [m].
+    LATERAL_SPAN = 60.0  # grid only: max left/right position offset from SCAN_CENTER [cm].
+    VERTICAL_SPAN = 36.0  # grid only: max up/down position offset from SCAN_CENTER [cm].
+    BASE_DISTANCE = 65.0  # grid only: nominal detector distance from SCAN_CENTER [cm].
+    DISTANCE_SPAN = 18.0  # grid only: sinusoidal variation of detector distance [cm].
+    ORBIT_RADIUS = 120.0  # around_center only: nominal radius of detector orbit around SCAN_CENTER [cm].
+    ORBIT_RADIUS_SPAN = 0  # around_center only: sinusoidal radius variation during orbit [cm].
     ORBIT_ANGLE_SPAN_DEG = 360.0  # around_center only: covered orbit angle; 360 means full circle.
     ORBIT_START_ANGLE_DEG = 0.0  # around_center only: starting angle of orbit in XY plane.
-    ORBIT_VERTICAL_SPAN = 0.2  # around_center only: sinusoidal up/down motion during orbit [m].
+    ORBIT_VERTICAL_SPAN = 20.0  # around_center only: sinusoidal up/down motion during orbit [cm].
 
     # Assumed reconstruction model.
     ASSUMED_BACKGROUND_MEAN_PER_SECOND = BACKGROUND_MEAN_PER_SECOND
@@ -257,7 +257,7 @@ def main():
     INNER_ITERATIONS_PER_UPDATE = 50
     MEASUREMENTS_PER_UPDATE = 2
     MAX_SOURCES_TO_REPORT = 1
-    MIN_SOURCE_DISTANCE = 0.08
+    MIN_SOURCE_DISTANCE = 8.0
     AVOID_DETECTOR_STRENGTH = 0.2  # 0 disables; how much distance is penalized
     AVOID_DETECTOR_DECAY_PER_UPDATE = 0  # penalty strength is multiplied by this after each update; bigger = faster decay
     ACTIVITY_DECAY = 0.9  # 1.0 disables; try 0.95..0.995 to "forget" old spikes
@@ -271,9 +271,9 @@ def main():
     UPDATE_FRAME_MAX_VOXELS = 700
     GIF_FPS = 1.0
     AXIS_LIMITS_3D = (
-        (-1, 1),
-        (-1, 1),
-        (-1, 1),
+        (-100, 100),
+        (-100, 100),
+        (-100, 100),
     )
 
     dataset = generate_synthetic_dataset(

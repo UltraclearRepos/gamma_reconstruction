@@ -135,7 +135,7 @@ def print_activity_localization_summary(summary):
         print(" no active voxels selected")
         return
 
-    print(" selected voxel -> true source distances [m]:")
+    print(" selected voxel -> true source distances [cm]:")
     print(
         "  min/mean/wmean/median/p90/max: "
         f"{summary['all_source_distance_min']:.4f} / "
@@ -146,7 +146,7 @@ def print_activity_localization_summary(summary):
         f"{summary['all_source_distance_max']:.4f}"
     )
 
-    print(" per true source distances from selected voxels [m]:")
+    print(" per true source distances from selected voxels [cm]:")
     for source_distances in summary["per_source_distances"]:
         source_number = source_distances["source_index"] + 1
         print(
@@ -253,14 +253,14 @@ def print_estimated_source_distance_summary(summary):
         estimated_number = item["estimated_index"] + 1
         print(
             f"  S1 -> nearest P{estimated_number}: "
-            f"distance={item['distance']:.4f} m, "
+            f"distance={item['distance']:.4f} cm, "
             f"true={np.round(item['true_position'], 4).tolist()}, "
             f"estimated={np.round(item['estimated_position'], 4).tolist()}, "
             f"activity={item['estimated_activity']:.2f}"
         )
 
     print(
-        " total true->estimate distance [m]: "
+        " total true->estimate distance [cm]: "
         f"{summary['total_true_to_estimated_distance']:.4f}"
     )
     if summary["true_source_count"] == 1:

@@ -300,39 +300,39 @@ FIXED_OVERRIDES = {
     "reconstruction_method": "mlem",  # Currently available: "mlem".
     "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
     "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
-    "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [m] and relative strengths.
-        {"position": (0.18, -0.2, 0.2), "relative_strength": 1.0},
+    "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and relative strengths.
+        {"position": (18.0, -20.0, 20.0), "relative_strength": 1.0},
     ],
     "NUM_CHANNELS": 16,  # Number of detector channels.
-    "DIODE_PITCH": 0.006,  # Distance between neighboring detector channels [m].
-    "SEARCH_MIN": (-0.5, -0.5, -0.5),  # Minimum x/y/z corner of searched source position volume [m].
-    "SEARCH_MAX": (0.5, 0.5, 0.5),  # Maximum x/y/z corner of searched source position volume [m].
+    "DIODE_PITCH": 0.6,  # Distance between neighboring detector channels [cm].
+    "SEARCH_MIN": (-50.0, -50.0, -50.0),  # Minimum x/y/z corner of searched source position volume [cm].
+    "SEARCH_MAX": (50.0, 50.0, 50.0),  # Maximum x/y/z corner of searched source position volume [cm].
     "GRID_SIZE": 13,  # ML-EM candidate grid size per axis.
     "TRAJECTORY_MODE": "grid",  # "grid" or "around_center".
-    "LATERAL_SPAN": 0.60,  # grid only: max left/right position offset from SCAN_CENTER [m].
-    "VERTICAL_SPAN": 0.36,  # grid only: max up/down position offset from SCAN_CENTER [m].
-    "BASE_DISTANCE": 1,  # grid only: nominal detector distance from SCAN_CENTER [m].
-    "DISTANCE_SPAN": 0.18,  # grid only: sinusoidal variation of detector distance [m].
-    "ORBIT_RADIUS": 1.3,  # around_center only: nominal radius of detector orbit around SCAN_CENTER [m].
-    "ORBIT_RADIUS_SPAN": 0,  # around_center only: sinusoidal radius variation during orbit [m].
+    "LATERAL_SPAN": 60.0,  # grid only: max left/right position offset from SCAN_CENTER [cm].
+    "VERTICAL_SPAN": 36.0,  # grid only: max up/down position offset from SCAN_CENTER [cm].
+    "BASE_DISTANCE": 100.0,  # grid only: nominal detector distance from SCAN_CENTER [cm].
+    "DISTANCE_SPAN": 18.0,  # grid only: sinusoidal variation of detector distance [cm].
+    "ORBIT_RADIUS": 130.0,  # around_center only: nominal radius of detector orbit around SCAN_CENTER [cm].
+    "ORBIT_RADIUS_SPAN": 0,  # around_center only: sinusoidal radius variation during orbit [cm].
     "ORBIT_ANGLE_SPAN_DEG": 360.0,  # around_center only: covered orbit angle; 360 means full circle.
     "ORBIT_START_ANGLE_DEG": 0.0,  # around_center only: starting angle of orbit in XY plane.
-    "ORBIT_VERTICAL_SPAN": 0.0,  # around_center only: sinusoidal up/down motion during orbit [m].
+    "ORBIT_VERTICAL_SPAN": 0.0,  # around_center only: sinusoidal up/down motion during orbit [cm].
     "ORIENTATION_MODE": "fixed",  # "fixed" or "towards_target"; use "towards_target" for around_center.
     "FIXED_VIEW_DIRECTION": (0, 1, 0),  # e.g. (1, 0, 0) to "look right" in world coords.
     "SCAN_CENTER": (0.0, 0.0, 0.0),  # Center of scan path; should match reconstruction volume center.
     "NUM_ITERATIONS": 10000,  # ML-EM iteration count. Set back to 10000 if you want to match run_demo exactly.
     "HISTORY_INTERVAL": 1000,  # How often ML-EM stores history snapshots.
     "MAX_SOURCES_TO_REPORT": 1,  # Number of strongest separated peaks reported from the activity map.
-    "MIN_SOURCE_DISTANCE": 0.08,  # Minimum separation between reported activity peaks [m].
+    "MIN_SOURCE_DISTANCE": 8.0,  # Minimum separation between reported activity peaks [cm].
     "ACTIVITY_MAX_RELATIVE_DROP": 0.5,  # Select voxels with activity >= (1 - drop) * max_activity.
     "PRINT_GENERATED_COUNTS_TABLE": False,  # Sweep runs skip the long generated-count table.
     "UPDATE_FRAME_MAX_VOXELS": 1000,  # Max strongest voxels plotted in one history frame.
     "GIF_FPS": 1.0,  # GIF frame rate if visualizations are enabled elsewhere.
     "AXIS_LIMITS_3D": (  # 3D plot axis limits if visualizations are enabled elsewhere.
-        (-1, 1),
-        (-1, 1),
-        (-1, 1),
+        (-100, 100),
+        (-100, 100),
+        (-100, 100),
     ),
 }
 
@@ -450,16 +450,16 @@ def summarize_run(case_index, group_name, parameter_overrides, experiment, elaps
             / config["PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND"]
         ),
         "estimated_peak_activity": float(first_estimated_activity),
-        "estimated_peak_error_m": float(estimated_distances["distance_mean"]),
-        "estimated_total_error_m": float(estimated_distances["total_true_to_estimated_distance"]),
+        "estimated_peak_error_cm": float(estimated_distances["distance_mean"]),
+        "estimated_total_error_cm": float(estimated_distances["total_true_to_estimated_distance"]),
         "selected_voxel_count": int(localization["selected_voxel_count"]),
         "selected_activity_fraction": float(localization["selected_activity_fraction"]),
-        "activity_distance_min_m": float(localization["all_source_distance_min"]),
-        "activity_distance_mean_m": float(localization["all_source_distance_mean"]),
-        "activity_distance_weighted_mean_m": float(
+        "activity_distance_min_cm": float(localization["all_source_distance_min"]),
+        "activity_distance_mean_cm": float(localization["all_source_distance_mean"]),
+        "activity_distance_weighted_mean_cm": float(
             localization["all_source_distance_weighted_mean"]
         ),
-        "activity_distance_p90_m": float(localization["all_source_distance_p90"]),
+        "activity_distance_p90_cm": float(localization["all_source_distance_p90"]),
     }
     row.update(_position_columns("true_source", first_true_position))
     row.update(_position_columns("estimated_peak", first_estimated_position))
@@ -490,14 +490,14 @@ def write_rows(path, rows):
         "estimated_peak_y",
         "estimated_peak_z",
         "estimated_peak_activity",
-        "estimated_peak_error_m",
-        "estimated_total_error_m",
+        "estimated_peak_error_cm",
+        "estimated_total_error_cm",
         "selected_voxel_count",
         "selected_activity_fraction",
-        "activity_distance_min_m",
-        "activity_distance_mean_m",
-        "activity_distance_weighted_mean_m",
-        "activity_distance_p90_m",
+        "activity_distance_min_cm",
+        "activity_distance_mean_cm",
+        "activity_distance_weighted_mean_cm",
+        "activity_distance_p90_cm",
     ]
 
     with path.open("w", newline="", encoding="utf-8") as output_file:
@@ -535,8 +535,8 @@ def main():
             f"[{case_index}/{len(cases)}] "
             f"group={group_name}, "
             f"{format_case_parameters(display_parameters)} -> "
-            f"peak_error={row['estimated_peak_error_m']:.4f} m, "
-            f"activity_wmean={row['activity_distance_weighted_mean_m']:.4f} m, "
+            f"peak_error={row['estimated_peak_error_cm']:.4f} cm, "
+            f"activity_wmean={row['activity_distance_weighted_mean_cm']:.4f} cm, "
             f"true_y={true_y:.4f}, estimated_y={estimated_y:.4f}, "
             f"elapsed={elapsed_seconds:.1f}s"
         )

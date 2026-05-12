@@ -90,7 +90,7 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limit
         rotations=rotations,
         forward_local=forward_local,
         stride=stride,
-        length=0.12,
+        length=12.0,
         color="tab:green",
         alpha=0.70,
         linewidth=1.0,
@@ -116,7 +116,7 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limit
         ax.text(
             position[0],
             position[1],
-            position[2] + 0.035,
+            position[2] + 3.5,
             f"S{index}",
             fontsize=9,
         )
@@ -128,9 +128,9 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limit
         set_3d_axis_limits(ax, axis_limits)
 
     ax.set_title("Multi-point source scene")
-    ax.set_xlabel("x world [m]")
-    ax.set_ylabel("y world [m]")
-    ax.set_zlabel("z world [m]")
+    ax.set_xlabel("x world [cm]")
+    ax.set_ylabel("y world [cm]")
+    ax.set_zlabel("z world [cm]")
     ax.legend(loc="upper right")
 
     finalize_figure(fig, save_path=save_path, show=show)
@@ -224,7 +224,7 @@ def visualize_mlem_activity(
         rotations=rotations,
         forward_local=forward_local,
         stride=max(1, len(translations) // 18),
-        length=0.11 if highlight_used_trajectory else 0.12,
+            length=11.0 if highlight_used_trajectory else 12.0,
         color=full_trajectory_color,
         alpha=0.25 if highlight_used_trajectory else 0.70,
         linewidth=0.9 if highlight_used_trajectory else 1.1,
@@ -249,7 +249,7 @@ def visualize_mlem_activity(
             rotations=rotations[used_slice] if rotations is not None else None,
             forward_local=forward_local,
             stride=max(1, used_end // 18),
-            length=0.11,
+            length=11.0,
             color="tab:blue",
             alpha=0.70,
             linewidth=1.1,
@@ -275,7 +275,7 @@ def visualize_mlem_activity(
                 rotations=rotations[start:end] if rotations is not None else None,
                 forward_local=forward_local,
                 stride=max(1, (end - start) // 8),
-                length=0.12,
+                length=12.0,
                 color="tab:orange",
                 alpha=0.90,
                 linewidth=1.2,
@@ -319,9 +319,9 @@ def visualize_mlem_activity(
     if frame_label is not None:
         title = f"{title}\n{frame_label}"
     ax.set_title(title)
-    ax.set_xlabel("x world [m]")
-    ax.set_ylabel("y world [m]")
-    ax.set_zlabel("z world [m]")
+    ax.set_xlabel("x world [cm]")
+    ax.set_ylabel("y world [cm]")
+    ax.set_zlabel("z world [cm]")
     ax.legend(loc="upper right")
 
     finalize_figure(fig, save_path=save_path, show=show)
@@ -388,7 +388,7 @@ def visualize_streaming_best_position(history, dataset, save_path=None, show=Fal
     for axis, (label, values, true_value, color) in zip(axes, coordinate_series):
         axis.plot(used_measurements, values, marker="o", linewidth=1.7, color=color, label=f"estimated {label}")
         axis.axhline(true_value, linestyle="--", color="black", linewidth=1.0, label=f"true centroid {label}")
-        axis.set_ylabel(f"{label} [m]")
+        axis.set_ylabel(f"{label} [cm]")
         axis.grid(True, alpha=0.3)
         axis.legend(loc="best")
 
@@ -444,7 +444,7 @@ def visualize_streaming_localization_metrics(history, save_path=None, show=False
         label="p90",
     )
     axes[0].set_title("Streaming localization metric")
-    axes[0].set_ylabel("voxel-source distance [m]")
+    axes[0].set_ylabel("voxel-source distance [cm]")
     axes[0].grid(True, alpha=0.3)
     axes[0].legend(loc="best")
 

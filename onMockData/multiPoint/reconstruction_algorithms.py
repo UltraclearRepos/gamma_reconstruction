@@ -27,7 +27,7 @@ def reconstruct_sources(
     num_iterations=40,
     history_interval=5,
     max_sources=3,
-    min_source_distance=0.08,
+    min_source_distance=8.0,
 ):
     """
     Run one multi-source reconstruction method using a plain if/elif dispatcher.
@@ -73,7 +73,7 @@ def make_candidate_grid(search_min, search_max, grid_size):
     return np.array(candidate_positions, dtype=float)
 
 
-def pick_activity_peaks(candidate_positions, activity, max_sources=3, min_distance=0.08):
+def pick_activity_peaks(candidate_positions, activity, max_sources=3, min_distance=8.0):
     """
     Pick strongest separated activity peaks from a voxel activity map.
 
@@ -123,7 +123,7 @@ def mlem_reconstruction(
     num_iterations=40,
     history_interval=5,
     max_sources=3,
-    min_source_distance=0.08,
+    min_source_distance=8.0,
 ):
     """
     Reconstruct a voxel activity map with ML-EM.

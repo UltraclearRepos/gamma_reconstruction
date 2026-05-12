@@ -67,12 +67,15 @@ def generate_synthetic_dataset(
     """
     Generate one synthetic multi-source experiment.
 
+    All source positions, detector offsets, and scan dimensions use centimeters.
+
     orientation_mode:
         - "fixed": keep detector pointing in one direction (default).
         - "towards_target": re-aim detector towards scan_center each measurement.
 
     trajectory_mode:
         - "grid": current one-sided scan.
+        - "line": one left-to-right scan line at scan_center height.
         - "around_center": detector positions orbit around scan_center.
 
     fixed_view_direction:

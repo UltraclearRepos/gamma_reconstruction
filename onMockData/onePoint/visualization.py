@@ -41,20 +41,20 @@ def visualize_detector_geometry(geometry, save_path=None, show=False):
             normal[0],
             normal[1],
             normal[2],
-            length=0.03,
+            length=3.0,
             color="tab:red",
             normalize=True,
         )
         if index % label_stride == 0 or index == len(positions) - 1:
-            ax.text(position[0], position[1], position[2] + 0.008, f"ch{index}", fontsize=8)
+            ax.text(position[0], position[1], position[2] + 0.8, f"ch{index}", fontsize=8)
 
-    points_for_scale = np.vstack([positions, positions + 0.03 * normals, np.zeros((1, 3))])
+    points_for_scale = np.vstack([positions, positions + 3.0 * normals, np.zeros((1, 3))])
     set_equal_3d_axes(ax, points_for_scale)
 
     ax.set_title("Linear detector geometry in local coordinates")
-    ax.set_xlabel("x local [m]")
-    ax.set_ylabel("y local [m]")
-    ax.set_zlabel("z local [m]")
+    ax.set_xlabel("x local [cm]")
+    ax.set_ylabel("y local [cm]")
+    ax.set_zlabel("z local [cm]")
     ax.legend()
 
     finalize_figure(fig, save_path=save_path, show=show)
@@ -114,7 +114,7 @@ def visualize_detector_trajectory_world(dataset, save_path=None, show=False):
             forward[0],
             forward[1],
             forward[2],
-            length=0.12,
+            length=12.0,
             color="tab:green",
             normalize=True,
         )
@@ -123,9 +123,9 @@ def visualize_detector_trajectory_world(dataset, save_path=None, show=False):
     set_equal_3d_axes(ax, points_for_scale)
 
     ax.set_title("One-sided detector scan in world coordinates")
-    ax.set_xlabel("x world [m]")
-    ax.set_ylabel("y world [m]")
-    ax.set_zlabel("z world [m]")
+    ax.set_xlabel("x world [cm]")
+    ax.set_ylabel("y world [cm]")
+    ax.set_zlabel("z world [cm]")
     ax.legend()
 
     finalize_figure(fig, save_path=save_path, show=show)
@@ -263,9 +263,9 @@ def visualize_reconstruction_history_3d(
     set_equal_3d_axes(ax, np.vstack(points_for_scale))
 
     ax.set_title("Reconstruction search history in 3D")
-    ax.set_xlabel("x world [m]")
-    ax.set_ylabel("y world [m]")
-    ax.set_zlabel("z world [m]")
+    ax.set_xlabel("x world [cm]")
+    ax.set_ylabel("y world [cm]")
+    ax.set_zlabel("z world [cm]")
     ax.legend(loc="upper right")
 
     finalize_figure(fig, save_path=save_path, show=show)

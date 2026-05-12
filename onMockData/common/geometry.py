@@ -80,7 +80,7 @@ def infer_detector_forward_axis(diode_normals_local):
     return np.array([0.0, 0.0, 1.0], dtype=float)
 
 
-def make_detector_geometry(num_channels=16, diode_pitch=0.006):
+def make_detector_geometry(num_channels=16, diode_pitch=0.6):
     """
     Create a linear detector with diodes placed side by side.
 
@@ -108,11 +108,11 @@ def make_detector_trajectory(
     rng,
     trajectory_mode="grid",
     angular_jitter_deg=2.0,
-    lateral_span=0.45,
-    vertical_span=0.28,
-    base_distance=0.65,
-    distance_span=0.18,
-    orbit_radius=0.65,
+    lateral_span=45.0,
+    vertical_span=28.0,
+    base_distance=65.0,
+    distance_span=18.0,
+    orbit_radius=65.0,
     orbit_radius_span=0.0,
     orbit_angle_span_deg=360.0,
     orbit_start_angle_deg=0.0,
@@ -125,8 +125,11 @@ def make_detector_trajectory(
     """
     Generate a detector trajectory around the scan center.
 
+    All position-like values use centimeters.
+
     trajectory_mode:
         - "grid": one-sided left/right, up/down scan at several distances.
+        - "line": one left-to-right scan line at scan_center height.
         - "around_center": orbit around scan_center in the XY plane.
 
     The nominal viewing direction is either constant, or it can be re-aimed
@@ -171,12 +174,14 @@ def make_detector_trajectory(
             if num_rows > 1
             else np.array([0.0], dtype=float)
         )
+    elif trajectory_mode == "line":
+        num_columns = max(1, int(num_measurements))
     elif trajectory_mode == "around_center":
         full_orbit = abs(abs(float(orbit_angle_span_deg)) - 360.0) < 1e-9
         angle_denominator = num_measurements if full_orbit else max(num_measurements - 1, 1)
     else:
         raise ValueError(
-            "trajectory_mode must be 'grid' or 'around_center'. Got: "
+            "trajectory_mode must be 'grid', 'line', or 'around_center'. Got: "
             f"{trajectory_mode!r}"
         )
 
@@ -194,8 +199,8 @@ def make_detector_trajectory(
             standoff_distance = base_distance + distance_span * math.sin(
                 2.0 * np.pi * distance_phase + 0.6 * row
             )
-            standoff_distance += 0.03 * rng.normal()
-            standoff_distance = max(0.25, standoff_distance)
+            standoff_distance += 3.0 * rng.normal()
+            standoff_distance = max(25.0, standoff_distance)
 
             detector_position = (
                 scan_center
@@ -205,6 +210,18 @@ def make_detector_trajectory(
             )
             z_fraction = 2.0 * column_fraction - 1.0
             x_fraction = 0.0 if num_rows == 1 else 2.0 * row / (num_rows - 1) - 1.0
+        elif trajectory_mode == "line":
+            column_fraction = 0.5 if num_columns == 1 else i / (num_columns - 1)
+            lateral_offset = (2.0 * column_fraction - 1.0) * lateral_span
+            standoff_distance = max(25.0, float(base_distance))
+            detector_position = (
+                scan_center
+                + lateral_offset * lateral_axis
+                + standoff_distance * standoff_axis
+                + float(vertical_span) * vertical_axis
+            )
+            z_fraction = 2.0 * column_fraction - 1.0
+            x_fraction = 0.0
         else:
             orbit_fraction = 0.0 if num_measurements <= 1 else i / angle_denominator
             angle = math.radians(float(orbit_start_angle_deg))
@@ -214,7 +231,7 @@ def make_detector_trajectory(
                 + math.sin(angle) * lateral_axis
             )
             radius = orbit_radius + orbit_radius_span * math.sin(2.0 * np.pi * orbit_fraction)
-            radius = max(0.25, radius)
+            radius = max(25.0, radius)
             vertical_offset = orbit_vertical_span * math.sin(2.0 * np.pi * orbit_fraction)
             detector_position = scan_center + radius * radial_direction + vertical_offset * vertical_axis
             z_fraction = math.sin(angle)

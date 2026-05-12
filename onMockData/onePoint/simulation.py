@@ -41,6 +41,8 @@ def generate_synthetic_dataset(
     """
     Generate one synthetic experiment.
 
+    All positions, detector offsets, and scan dimensions use centimeters.
+
     orientation_mode:
         - "fixed": keep detector pointing in one direction (default).
         - "towards_target": re-aim detector towards scan_center each measurement.

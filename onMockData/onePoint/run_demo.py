@@ -31,7 +31,7 @@ def print_summary(dataset, method, estimated_position, estimated_strength, histo
     print()
     print("True source position:       ", np.round(dataset["true_source_position"], 4))
     print("Estimated source position:  ", np.round(estimated_position, 4))
-    print(f"Position error:              {100.0 * position_error:.2f} cm")
+    print(f"Position error:              {position_error:.2f} cm")
     print()
     print(f"True source strength A:      {dataset['true_source_strength']:.2f}")
     print(f"Estimated source strength A: {estimated_strength:.2f}")
@@ -108,9 +108,9 @@ def main():
     # Mock data generation.
     SEED = 7  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
     NUM_MEASUREMENTS = 24  # Number of detector positions / generated measurements.
-    TRUE_SOURCE_POSITION = (0.18, -0.12, 0.26)  # Ground-truth point source position [m].
+    TRUE_SOURCE_POSITION = (18.0, -12.0, 26.0)  # Ground-truth point source position [cm].
     NUM_CHANNELS = 16  # Number of detector channels.
-    DIODE_PITCH = 0.006  # Distance between neighboring detector channels [m].
+    DIODE_PITCH = 0.6  # Distance between neighboring detector channels [cm].
     MEASUREMENT_DURATION_SECONDS = 1.0  # Duration of one measurement; rates below are multiplied by this.
     BACKGROUND_MEAN_PER_SECOND = 12000.0  # Mean background counts per channel per second.
     BACKGROUND_CHANNEL_STD_PER_SECOND = 350.0  # Channel-to-channel background std per second.
@@ -120,8 +120,8 @@ def main():
     PEAK_SOURCE_SIGNAL_PER_SECOND = 4000.0  # Peak source signal rate in the best measurement.
 
     # Reconstruction volume.
-    SEARCH_MIN = (-0.40, -0.50, -0.10)  # Minimum x/y/z corner of searched source position volume [m].
-    SEARCH_MAX = (0.60, 0.30, 0.60)  # Maximum x/y/z corner of searched source position volume [m].
+    SEARCH_MIN = (-40.0, -50.0, -10.0)  # Minimum x/y/z corner of searched source position volume [cm].
+    SEARCH_MAX = (60.0, 30.0, 60.0)  # Maximum x/y/z corner of searched source position volume [cm].
 
     # Mock detector trajectory.
     TRAJECTORY_MODE = "grid"  # "grid" or "around_center"
@@ -131,15 +131,15 @@ def main():
     FIXED_SWEEP_X_DEG = 6.0  # fixed mode only: up/down viewing sweep around world X axis.
     SCAN_CENTER = tuple((np.array(SEARCH_MIN) + np.array(SEARCH_MAX)) / 2.0)  # Center of scan path; should match search volume center.
     ANGULAR_JITTER_DEG = 3.0  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-    LATERAL_SPAN = 0.45  # grid only: max left/right position offset from SCAN_CENTER [m].
-    VERTICAL_SPAN = 0.28  # grid only: max up/down position offset from SCAN_CENTER [m].
-    BASE_DISTANCE = 0.65  # grid only: nominal detector distance from SCAN_CENTER [m].
-    DISTANCE_SPAN = 0.18  # grid only: sinusoidal variation of detector distance [m].
-    ORBIT_RADIUS = 0.90  # around_center only: nominal radius of detector orbit around SCAN_CENTER [m].
-    ORBIT_RADIUS_SPAN = 0.05  # around_center only: sinusoidal radius variation during orbit [m].
+    LATERAL_SPAN = 45.0  # grid only: max left/right position offset from SCAN_CENTER [cm].
+    VERTICAL_SPAN = 28.0  # grid only: max up/down position offset from SCAN_CENTER [cm].
+    BASE_DISTANCE = 65.0  # grid only: nominal detector distance from SCAN_CENTER [cm].
+    DISTANCE_SPAN = 18.0  # grid only: sinusoidal variation of detector distance [cm].
+    ORBIT_RADIUS = 90.0  # around_center only: nominal radius of detector orbit around SCAN_CENTER [cm].
+    ORBIT_RADIUS_SPAN = 5.0  # around_center only: sinusoidal radius variation during orbit [cm].
     ORBIT_ANGLE_SPAN_DEG = 360.0  # around_center only: covered orbit angle; 360 means full circle.
     ORBIT_START_ANGLE_DEG = 0.0  # around_center only: starting angle of orbit in XY plane.
-    ORBIT_VERTICAL_SPAN = 0.18  # around_center only: sinusoidal up/down motion during orbit [m].
+    ORBIT_VERTICAL_SPAN = 18.0  # around_center only: sinusoidal up/down motion during orbit [cm].
 
     # Assumed reconstruction model.
     ASSUMED_BACKGROUND_MEAN_PER_SECOND = BACKGROUND_MEAN_PER_SECOND  # Background rate used by reconstruction model.

@@ -29,8 +29,8 @@ from visualization import (
 
 def make_default_config():
     """Return default settings for the synthetic multi-point demo."""
-    search_min = (-0.5, -0.5, -0.5)
-    search_max = (0.5, 0.5, 0.5)
+    search_min = (-50.0, -50.0, -50.0)
+    search_max = (50.0, 50.0, 50.0)
 
     return {
         # Reconstruction method.
@@ -40,12 +40,12 @@ def make_default_config():
         "SEED": 11,
         "NUM_MEASUREMENTS": 30,
         "TRUE_SOURCE_SPECS": [
-            {"position": (0.18, -0.2, 0.2), "relative_strength": 1.0},
-            # {"position": (-0.10, -0.18, 0.16), "relative_strength": 0.65},
-            # {"position": (0.34, -0.07, 0.38), "relative_strength": 0.45},
+            {"position": (18.0, -20.0, 20.0), "relative_strength": 1.0},
+            # {"position": (-10.0, -18.0, 16.0), "relative_strength": 0.65},
+            # {"position": (34.0, -7.0, 38.0), "relative_strength": 0.45},
         ],
         "NUM_CHANNELS": 16,
-        "DIODE_PITCH": 0.006,
+        "DIODE_PITCH": 0.6,
         "MEASUREMENT_DURATION_SECONDS": 1.0,
         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
         "BACKGROUND_CHANNEL_STD_PER_SECOND": 200.0,
@@ -65,12 +65,12 @@ def make_default_config():
         "GRID_SIZE": 13,
 
         # Mock detector trajectory.
-        "TRAJECTORY_MODE": "grid",
-        "LATERAL_SPAN": 0.60,
-        "VERTICAL_SPAN": 0.36,
-        "BASE_DISTANCE": 1,
-        "DISTANCE_SPAN": 0.18,
-        "ORBIT_RADIUS": 1.3,
+        "TRAJECTORY_MODE": "line",
+        "LATERAL_SPAN": 60.0,
+        "VERTICAL_SPAN": 0.0,
+        "BASE_DISTANCE": 100.0,
+        "DISTANCE_SPAN": 0.0,
+        "ORBIT_RADIUS": 130.0,
         "ORBIT_RADIUS_SPAN": 0,
         "ORBIT_ANGLE_SPAN_DEG": 360.0,
         "ORBIT_START_ANGLE_DEG": 0.0,
@@ -78,16 +78,16 @@ def make_default_config():
 
         "ORIENTATION_MODE": "fixed",
         "FIXED_VIEW_DIRECTION": (0, 1, 0),
-        "FIXED_SWEEP_Z_DEG": 0.0,
-        "FIXED_SWEEP_X_DEG": 0.0,
+        "FIXED_SWEEP_Z_DEG": 60.0,
+        "FIXED_SWEEP_X_DEG": -60.0,
         "SCAN_CENTER": tuple((np.array(search_min) + np.array(search_max)) / 2.0),
-        "ANGULAR_JITTER_DEG": 0.0,
+        "ANGULAR_JITTER_DEG": 20.0,
 
         # Reconstruction algorithm.
         "NUM_ITERATIONS": 10000,
         "HISTORY_INTERVAL": 1000,
         "MAX_SOURCES_TO_REPORT": 1,
-        "MIN_SOURCE_DISTANCE": 0.08,
+        "MIN_SOURCE_DISTANCE": 8.0,
 
         # Localization metric.
         "ACTIVITY_MAX_RELATIVE_DROP": 0.5,
@@ -97,9 +97,9 @@ def make_default_config():
         "UPDATE_FRAME_MAX_VOXELS": 1000000,
         "GIF_FPS": 1.0,
         "AXIS_LIMITS_3D": (
-            (-1, 1),
-            (-1, 1),
-            (-1, 1),
+            (-100, 100),
+            (-100, 100),
+            (-100, 100),
         ),
     }
 
@@ -294,9 +294,9 @@ def print_reconstruction_summary(method, result, true_sources, relative_drop):
         print(
             "  "
             f"threshold_metric: selected_voxels={metrics['selected_voxel_count']}, "
-            f"mean={metrics['all_source_distance_mean']:.4f} m, "
-            f"wmean={metrics['all_source_distance_weighted_mean']:.4f} m, "
-            f"p90={metrics['all_source_distance_p90']:.4f} m"
+            f"mean={metrics['all_source_distance_mean']:.4f} cm, "
+            f"wmean={metrics['all_source_distance_weighted_mean']:.4f} cm, "
+            f"p90={metrics['all_source_distance_p90']:.4f} cm"
         )
 
 
