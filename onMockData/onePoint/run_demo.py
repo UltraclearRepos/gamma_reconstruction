@@ -110,7 +110,7 @@ def main():
     NUM_MEASUREMENTS = 24  # Number of detector positions / generated measurements.
     TRUE_SOURCE_POSITION = (18.0, -12.0, 26.0)  # Ground-truth point source position [cm].
     NUM_CHANNELS = 16  # Number of detector channels.
-    DIODE_PITCH = 0.6  # Distance between neighboring detector channels [cm].
+    DIODE_PITCH = 0.15875  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
     MEASUREMENT_DURATION_SECONDS = 1.0  # Duration of one measurement; rates below are multiplied by this.
     BACKGROUND_MEAN_PER_SECOND = 12000.0  # Mean background counts per channel per second.
     BACKGROUND_CHANNEL_STD_PER_SECOND = 350.0  # Channel-to-channel background std per second.
@@ -120,22 +120,24 @@ def main():
     PEAK_SOURCE_SIGNAL_PER_SECOND = 4000.0  # Peak source signal rate in the best measurement.
 
     # Reconstruction volume.
-    SEARCH_MIN = (-40.0, -50.0, -10.0)  # Minimum x/y/z corner of searched source position volume [cm].
-    SEARCH_MAX = (60.0, 30.0, 60.0)  # Maximum x/y/z corner of searched source position volume [cm].
+    SEARCH_START_DISTANCE = 25.0  # Start searching this far from each detector channel along detector forward axis [cm].
+    SEARCH_STOP_DISTANCE = 105.0  # Stop searching this far from each detector channel; window length = stop - start [cm].
+    SEARCH_START_RADIUS = 5.0  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
+    SEARCH_STOP_RADIUS = 35.0  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
 
     # Mock detector trajectory.
     TRAJECTORY_MODE = "grid"  # "grid" or "around_center"
     ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target" | "towards_target" recommended for TRAJECTORY_MODE="around_center"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
-    FIXED_SWEEP_Z_DEG = 10.0  # fixed mode only: left/right viewing sweep around world Z axis.
-    FIXED_SWEEP_X_DEG = 6.0  # fixed mode only: up/down viewing sweep around world X axis.
-    SCAN_CENTER = tuple((np.array(SEARCH_MIN) + np.array(SEARCH_MAX)) / 2.0)  # Center of scan path; should match search volume center.
+    FIXED_SWEEP_Z_RANGE_DEG = 10.0  # random left/right angle range around world Z axis, sampled as +/- this value.
+    FIXED_SWEEP_X_RANGE_DEG = 6.0  # random up/down angle range around world X axis, sampled as +/- this value.
+    TRAJECTORY_CENTER = (10.0, -10.0, 25.0)  # Reference center of the detector trajectory [cm].
     ANGULAR_JITTER_DEG = 3.0  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-    LATERAL_SPAN = 45.0  # grid only: max left/right position offset from SCAN_CENTER [cm].
-    VERTICAL_SPAN = 28.0  # grid only: max up/down position offset from SCAN_CENTER [cm].
-    BASE_DISTANCE = 65.0  # grid only: nominal detector distance from SCAN_CENTER [cm].
+    LATERAL_SPAN = 45.0  # grid only: max left/right position offset from TRAJECTORY_CENTER [cm].
+    VERTICAL_SPAN = 28.0  # grid only: max up/down position offset from TRAJECTORY_CENTER [cm].
+    BASE_DISTANCE = 65.0  # grid only: nominal detector distance from TRAJECTORY_CENTER [cm].
     DISTANCE_SPAN = 18.0  # grid only: sinusoidal variation of detector distance [cm].
-    ORBIT_RADIUS = 90.0  # around_center only: nominal radius of detector orbit around SCAN_CENTER [cm].
+    ORBIT_RADIUS = 90.0  # around_center only: nominal radius of detector orbit around TRAJECTORY_CENTER [cm].
     ORBIT_RADIUS_SPAN = 5.0  # around_center only: sinusoidal radius variation during orbit [cm].
     ORBIT_ANGLE_SPAN_DEG = 360.0  # around_center only: covered orbit angle; 360 means full circle.
     ORBIT_START_ANGLE_DEG = 0.0  # around_center only: starting angle of orbit in XY plane.
@@ -171,7 +173,11 @@ def main():
         generation_k=GENERATION_K,
         peak_source_signal_per_second=PEAK_SOURCE_SIGNAL_PER_SECOND,
         measurement_duration_seconds=MEASUREMENT_DURATION_SECONDS,
-        scan_center=SCAN_CENTER,
+        trajectory_center=TRAJECTORY_CENTER,
+        search_start_distance=SEARCH_START_DISTANCE,
+        search_stop_distance=SEARCH_STOP_DISTANCE,
+        search_start_radius=SEARCH_START_RADIUS,
+        search_stop_radius=SEARCH_STOP_RADIUS,
         trajectory_mode=TRAJECTORY_MODE,
         angular_jitter_deg=ANGULAR_JITTER_DEG,
         lateral_span=LATERAL_SPAN,
@@ -183,8 +189,8 @@ def main():
         orbit_angle_span_deg=ORBIT_ANGLE_SPAN_DEG,
         orbit_start_angle_deg=ORBIT_START_ANGLE_DEG,
         orbit_vertical_span=ORBIT_VERTICAL_SPAN,
-        fixed_sweep_z_deg=FIXED_SWEEP_Z_DEG,
-        fixed_sweep_x_deg=FIXED_SWEEP_X_DEG,
+        fixed_sweep_z_range_deg=FIXED_SWEEP_Z_RANGE_DEG,
+        fixed_sweep_x_range_deg=FIXED_SWEEP_X_RANGE_DEG,
     )
     num_channels = dataset["counts"].shape[1]
 
@@ -207,8 +213,12 @@ def main():
         rotations=dataset["rotations"],
         translations=dataset["translations"],
         **assumed_model,
-        search_min=SEARCH_MIN,
-        search_max=SEARCH_MAX,
+        search_min=dataset["search_min"],
+        search_max=dataset["search_max"],
+        search_start_distance=dataset["search_start_distance"],
+        search_stop_distance=dataset["search_stop_distance"],
+        search_start_radius=dataset["search_start_radius"],
+        search_stop_radius=dataset["search_stop_radius"],
         method=reconstruction_method,
         grid_sizes=GRID_SIZES,
         grid_size=GRID_SIZE,

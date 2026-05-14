@@ -234,8 +234,8 @@ def main():
     TRAJECTORY_MODE = "grid"  # "grid" or "around_center"
     ORIENTATION_MODE = "fixed"  # "fixed" or "towards_target" | "towards_target" recommended for TRAJECTORY_MODE="around_center"
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
-    FIXED_SWEEP_Z_DEG = 20.0  # fixed mode only: left/right viewing sweep around world Z axis.
-    FIXED_SWEEP_X_DEG = -20.0  # fixed mode only: up/down viewing sweep around world X axis.
+    FIXED_SWEEP_Z_RANGE_DEG = 20.0  # random left/right angle range around world Z axis, sampled as +/- this value.
+    FIXED_SWEEP_X_RANGE_DEG = 20.0  # random up/down angle range around world X axis, sampled as +/- this value.
     TRAJECTORY_CENTER = (0.0, 0.0, 0.0)  # Reference center of the detector trajectory [cm].
     ANGULAR_JITTER_DEG = 3.0  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
     LATERAL_SPAN = 60.0  # grid only: max left/right position offset from TRAJECTORY_CENTER [cm].
@@ -309,8 +309,8 @@ def main():
         orbit_angle_span_deg=ORBIT_ANGLE_SPAN_DEG,
         orbit_start_angle_deg=ORBIT_START_ANGLE_DEG,
         orbit_vertical_span=ORBIT_VERTICAL_SPAN,
-        fixed_sweep_z_deg=FIXED_SWEEP_Z_DEG,
-        fixed_sweep_x_deg=FIXED_SWEEP_X_DEG,
+        fixed_sweep_z_range_deg=FIXED_SWEEP_Z_RANGE_DEG,
+        fixed_sweep_x_range_deg=FIXED_SWEEP_X_RANGE_DEG,
     )
 
     print_dataset_summary(dataset)
@@ -386,8 +386,8 @@ def main():
         "TRAJECTORY_MODE": TRAJECTORY_MODE,
         "ORIENTATION_MODE": ORIENTATION_MODE,
         "FIXED_VIEW_DIRECTION": FIXED_VIEW_DIRECTION,
-        "FIXED_SWEEP_Z_DEG": FIXED_SWEEP_Z_DEG,
-        "FIXED_SWEEP_X_DEG": FIXED_SWEEP_X_DEG,
+        "FIXED_SWEEP_Z_RANGE_DEG": FIXED_SWEEP_Z_RANGE_DEG,
+        "FIXED_SWEEP_X_RANGE_DEG": FIXED_SWEEP_X_RANGE_DEG,
         "TRAJECTORY_CENTER": TRAJECTORY_CENTER,
         "ANGULAR_JITTER_DEG": ANGULAR_JITTER_DEG,
         "LATERAL_SPAN": LATERAL_SPAN,

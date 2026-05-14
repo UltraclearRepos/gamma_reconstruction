@@ -32,8 +32,8 @@ SWEEP_DEFAULTS = {
     "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
     "ASSUMED_K": 4.5,  # Angular sensitivity exponent used by reconstruction model.
     "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-    "FIXED_SWEEP_Z_DEG": 0.0,  # fixed mode only: left/right viewing sweep around world Z axis.
-    "FIXED_SWEEP_X_DEG": 0.0,  # fixed mode only: up/down viewing sweep around world X axis.
+    "FIXED_SWEEP_Z_RANGE_DEG": 0.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
+    "FIXED_SWEEP_X_RANGE_DEG": 0.0,  # random up/down angle range around world X axis, sampled as +/- this value.
 }
 
 
@@ -45,8 +45,8 @@ SWEEP_GROUPS = [
     #     "name": "ratio_table_best_angles",
     #     "base": {
     #         "ANGULAR_JITTER_DEG": 20.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-    #         "FIXED_SWEEP_Z_DEG": 60.0,  # Best tested left-right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": -60.0,  # Best tested up-down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": 60.0,  # Best tested left/right random angle range around world Z axis.
+    #         "FIXED_SWEEP_X_RANGE_DEG": 60.0,  # Best tested up/down random angle range around world X axis.
     #         "GENERATION_K": 4.5,  # Generated angular response.
     #         "ASSUMED_K": 4.5,  # Matched angular response used by reconstruction.
     #         "CHANNEL_SCALE_MEAN": 1.0,  # Generated global channel sensitivity.
@@ -94,8 +94,8 @@ SWEEP_GROUPS = [
         "name": "assumed_background_mismatch_best_case",
         "base": {
             "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-            "FIXED_SWEEP_Z_DEG": 60.0,  # Best tested left-right viewing sweep around world Z axis.
-            "FIXED_SWEEP_X_DEG": -60.0,  # Best tested up-down viewing sweep around world X axis.
+            "FIXED_SWEEP_Z_RANGE_DEG": 60.0,  # Best tested left/right random angle range around world Z axis.
+            "FIXED_SWEEP_X_RANGE_DEG": 60.0,  # Best tested up/down random angle range around world X axis.
             "BACKGROUND_MEAN_PER_SECOND": 1000.0,  # True background level.
             "BACKGROUND_CHANNEL_STD_PER_SECOND": 0.0,  # Channel-to-channel background std per second.
             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,  # background/source = 0.2.
@@ -175,8 +175,8 @@ SWEEP_GROUPS = [
     #     "base": {},
     #     "sweep": {
     #         "ANGULAR_JITTER_DEG": [0.0, 2.5, 5.0, 10.0, 20.0],  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-    #         "FIXED_SWEEP_Z_DEG": [0.0, 10.0, 25.0, 45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": [0.0, 10.0, 25.0, 45.0, 60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": [0.0, 10.0, 25.0, 45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
+    #         "FIXED_SWEEP_X_RANGE_DEG": [0.0, 10.0, 25.0, 45.0, 60.0],  # random up/down angle range around world X axis, sampled as +/- this value.
     #     },
     # },
     # {
@@ -189,8 +189,8 @@ SWEEP_GROUPS = [
     #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 500.0,
     #     },
     #     "sweep": {
-    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
+    #         "FIXED_SWEEP_X_RANGE_DEG": [25.0, 45.0, 60.0],  # random up/down angle range around world X axis, sampled as +/- this value.
     #     },
     # },
     # {
@@ -203,8 +203,8 @@ SWEEP_GROUPS = [
     #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
     #     },
     #     "sweep": {
-    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
+    #         "FIXED_SWEEP_X_RANGE_DEG": [25.0, 45.0, 60.0],  # random up/down angle range around world X axis, sampled as +/- this value.
     #     },
     # },
     # {
@@ -217,8 +217,8 @@ SWEEP_GROUPS = [
     #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2000.0,
     #     },
     #     "sweep": {
-    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
+    #         "FIXED_SWEEP_X_RANGE_DEG": [25.0, 45.0, 60.0],  # random up/down angle range around world X axis, sampled as +/- this value.
     #     },
     # },
     # {
@@ -231,8 +231,8 @@ SWEEP_GROUPS = [
     #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
     #     },
     #     "sweep": {
-    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
+    #         "FIXED_SWEEP_X_RANGE_DEG": [25.0, 45.0, 60.0],  # random up/down angle range around world X axis, sampled as +/- this value.
     #     },
     # },
     # {
@@ -245,8 +245,8 @@ SWEEP_GROUPS = [
     #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
     #     },
     #     "sweep": {
-    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
+    #         "FIXED_SWEEP_X_RANGE_DEG": [25.0, 45.0, 60.0],  # random up/down angle range around world X axis, sampled as +/- this value.
     #     },
     # },
     # {
@@ -259,8 +259,8 @@ SWEEP_GROUPS = [
     #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2500.0,
     #     },
     #     "sweep": {
-    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
+    #         "FIXED_SWEEP_X_RANGE_DEG": [25.0, 45.0, 60.0],  # random up/down angle range around world X axis, sampled as +/- this value.
     #     },
     # },
     # {
@@ -273,8 +273,8 @@ SWEEP_GROUPS = [
     #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
     #     },
     #     "sweep": {
-    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
+    #         "FIXED_SWEEP_X_RANGE_DEG": [25.0, 45.0, 60.0],  # random up/down angle range around world X axis, sampled as +/- this value.
     #     },
     # },
     # {
@@ -287,8 +287,8 @@ SWEEP_GROUPS = [
     #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 10000.0,
     #     },
     #     "sweep": {
-    #         "FIXED_SWEEP_Z_DEG": [45.0, 60.0],  # fixed mode only: left/right viewing sweep around world Z axis.
-    #         "FIXED_SWEEP_X_DEG": [-25.0, -45.0, -60.0],  # fixed mode only: up/down viewing sweep around world X axis.
+    #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
+    #         "FIXED_SWEEP_X_RANGE_DEG": [25.0, 45.0, 60.0],  # random up/down angle range around world X axis, sampled as +/- this value.
     #     },
     # },
 ]

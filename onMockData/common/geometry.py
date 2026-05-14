@@ -273,8 +273,8 @@ def make_detector_trajectory(
     orbit_vertical_span=0.0,
     orientation_mode="fixed",
     fixed_view_direction=None,
-    fixed_sweep_z_deg=0.0,
-    fixed_sweep_x_deg=0.0,
+    fixed_sweep_z_range_deg=0.0,
+    fixed_sweep_x_range_deg=0.0,
 ):
     """
     Generate a detector trajectory around the trajectory center.
@@ -365,8 +365,6 @@ def make_detector_trajectory(
                 + standoff_distance * standoff_axis
                 + vertical_offset * vertical_axis
             )
-            z_fraction = 2.0 * column_fraction - 1.0
-            x_fraction = 0.0 if num_rows == 1 else 2.0 * row / (num_rows - 1) - 1.0
         elif trajectory_mode == "line":
             column_fraction = 0.5 if num_columns == 1 else i / (num_columns - 1)
             lateral_offset = (2.0 * column_fraction - 1.0) * lateral_span
@@ -377,8 +375,6 @@ def make_detector_trajectory(
                 + standoff_distance * standoff_axis
                 + float(vertical_span) * vertical_axis
             )
-            z_fraction = 2.0 * column_fraction - 1.0
-            x_fraction = 0.0
         else:
             orbit_fraction = 0.0 if num_measurements <= 1 else i / angle_denominator
             angle = math.radians(float(orbit_start_angle_deg))
@@ -391,8 +387,6 @@ def make_detector_trajectory(
             radius = max(MIN_TRAJECTORY_DISTANCE, radius)
             vertical_offset = orbit_vertical_span * math.sin(2.0 * np.pi * orbit_fraction)
             detector_position = trajectory_center + radius * radial_direction + vertical_offset * vertical_axis
-            z_fraction = math.sin(angle)
-            x_fraction = 0.0 if orbit_vertical_span == 0.0 else math.sin(2.0 * np.pi * orbit_fraction)
 
         if base_rotation is None:
             view_direction = trajectory_center - detector_position
@@ -403,13 +397,17 @@ def make_detector_trajectory(
                 local_forward=geometry["detector_forward_local"],
             )
         else:
-            z_angle = math.radians(float(fixed_sweep_z_deg)) * z_fraction
-            x_angle = math.radians(float(fixed_sweep_x_deg)) * x_fraction
-            sweep_rotation = (
-                axis_angle_rotation(vertical_axis, z_angle)
-                @ axis_angle_rotation(lateral_axis, x_angle)
-            )
-            rotation = sweep_rotation @ base_rotation
+            rotation = base_rotation
+
+        z_range = abs(float(fixed_sweep_z_range_deg))
+        x_range = abs(float(fixed_sweep_x_range_deg))
+        z_angle = math.radians(rng.uniform(-z_range, z_range))
+        x_angle = math.radians(rng.uniform(-x_range, x_range))
+        sweep_rotation = (
+            axis_angle_rotation(vertical_axis, z_angle)
+            @ axis_angle_rotation(lateral_axis, x_angle)
+        )
+        rotation = sweep_rotation @ rotation
 
         # Small orientation mismatch to make the generated data a bit more realistic.
         jitter_axis = normalize(rng.normal(size=3))

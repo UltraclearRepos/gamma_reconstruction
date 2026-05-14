@@ -183,33 +183,39 @@ def mlem_reconstruction(
         search_start_radius=search_start_radius,
         search_stop_radius=search_stop_radius,
     )
-    system_matrix = build_system_matrix(
-        candidate_positions=candidate_positions,
+    system_matrix = build_system_matrix(         # system_matrix is H: rows are flattened measurement/channel pairs, columns are voxels.
+        candidate_positions=candidate_positions, # H[row, voxel] says how much one unit of activity in that voxel would add to that detector count for specific measurement and specific channel.
         geometry=geometry,
         rotations=rotations,
         translations=translations,
         assumed_channel_scales=assumed_channel_scales,
         assumed_k=assumed_k,
     )
-
+    
     counts_flat = counts.ravel()
     backgrounds_flat = np.broadcast_to(assumed_backgrounds, counts.shape).ravel()
-    sensitivity = np.sum(system_matrix, axis=0)
+    
+    sensitivity = np.sum(system_matrix, axis=0) # Sensitivity tells us how much each voxel contribute to detector response, not for each measurement, but in total
 
     initial_signal = np.maximum(counts_flat - backgrounds_flat, 0.0)
     initial_activity = np.sum(initial_signal) / max(float(np.sum(sensitivity)), EPS)
-    activity = np.full(len(candidate_positions), max(initial_activity, EPS), dtype=float)
+    
+    activity = np.full(len(candidate_positions), max(initial_activity, EPS), dtype=float) # Start from a flat activity map: every candidate voxel gets the same positive activity. 
+                                                                                          # ML-EM will then move activity toward voxels whose H columns best explain the counts.
 
     history = []
     activity_history = []
     for iteration in range(1, num_iterations + 1):
-        predicted_counts = predict_counts_from_activity(
+        
+        predicted_counts = predict_counts_from_activity( # BACKGROUND + H @ ACTIVITY -> Based on each voxel's constibution to each measurement-channel pair and activity -> predicts counts for each measurement and each channel.
             backgrounds_flat=backgrounds_flat,
             system_matrix=system_matrix,
             activity=activity,
         )
-        ratio = counts_flat / np.maximum(predicted_counts, EPS)
-        correction = (system_matrix.T @ ratio) / np.maximum(sensitivity, EPS)
+        ratio = counts_flat / np.maximum(predicted_counts, EPS) # Ratio tells how much error we have in each measurement-channel pair.
+        correction = (system_matrix.T @ ratio) / np.maximum(sensitivity, EPS) # So crucial step. H tells us how much each voxel contribute to measurement-channel pair prediction and ratio tells us how bad prediction was.
+                                                                              # H.T @ ratio gives each voxel a response-weighted sum of measurement errors. Dividing by sensitivity normalizes it by total voxel response,
+                                                                              # so correction[voxel] becomes the H-weighted average ratio for that voxel, not just a larger sum for better-covered voxels.
         activity *= correction
 
         if iteration == 1 or iteration % history_interval == 0 or iteration == num_iterations:

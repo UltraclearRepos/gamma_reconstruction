@@ -32,9 +32,12 @@ def build_system_matrix(
     """
     num_rows = len(translations) * len(assumed_channel_scales)
     num_voxels = len(candidate_positions)
+    # Rows are flattened detector observations: measurement 0/channel 0, measurement 0/channel 1, ...
+    # Columns are candidate voxels. Each column is the detector signature of one unit source.
     system_matrix = np.zeros((num_rows, num_voxels), dtype=float)
 
     for voxel_index, candidate_position in enumerate(candidate_positions):
+        # Simulate what all detector positions/channels would measure if this voxel had activity 1.
         response = compute_detector_response(
             source_position=candidate_position,
             geometry=geometry,
@@ -50,4 +53,5 @@ def build_system_matrix(
 
 def predict_counts_from_activity(backgrounds_flat, system_matrix, activity):
     """Predict flattened detector counts from background and voxel activity."""
+    # H @ activity sums contributions from all voxels for every measurement/channel row.
     return backgrounds_flat + system_matrix @ activity

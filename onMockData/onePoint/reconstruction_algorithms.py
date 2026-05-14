@@ -4,6 +4,7 @@ Reconstruction algorithms for estimating the source position from measurements.
 
 import numpy as np
 
+from common.geometry import points_in_detector_window
 from reconstruction_objective import score_candidate_position
 
 
@@ -17,6 +18,10 @@ def reconstruct_source(
     assumed_k,
     search_min,
     search_max,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
     method="coarse_to_fine",
     grid_sizes=(13, 11, 9),
     grid_size=21,
@@ -42,6 +47,10 @@ def reconstruct_source(
             assumed_k=assumed_k,
             search_min=search_min,
             search_max=search_max,
+            search_start_distance=search_start_distance,
+            search_stop_distance=search_stop_distance,
+            search_start_radius=search_start_radius,
+            search_stop_radius=search_stop_radius,
             grid_sizes=grid_sizes,
         )
 
@@ -56,6 +65,10 @@ def reconstruct_source(
             assumed_k=assumed_k,
             search_min=search_min,
             search_max=search_max,
+            search_start_distance=search_start_distance,
+            search_stop_distance=search_stop_distance,
+            search_start_radius=search_start_radius,
+            search_stop_radius=search_stop_radius,
             grid_size=grid_size,
         )
 
@@ -70,6 +83,10 @@ def reconstruct_source(
             assumed_k=assumed_k,
             search_min=search_min,
             search_max=search_max,
+            search_start_distance=search_start_distance,
+            search_stop_distance=search_stop_distance,
+            search_start_radius=search_start_radius,
+            search_stop_radius=search_stop_radius,
             random_samples=random_samples,
             random_seed=random_seed,
         )
@@ -90,6 +107,10 @@ def coarse_to_fine_grid_search(
     assumed_k,
     search_min,
     search_max,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
     grid_sizes=(13, 11, 9),
 ):
     """
@@ -120,6 +141,17 @@ def coarse_to_fine_grid_search(
             for y in ys:
                 for z in zs:
                     candidate = np.array([x, y, z], dtype=float)
+                    if not points_in_detector_window(
+                        points=np.array([candidate], dtype=float),
+                        geometry=geometry,
+                        rotations=rotations,
+                        translations=translations,
+                        search_start_distance=search_start_distance,
+                        search_stop_distance=search_stop_distance,
+                        search_start_radius=search_start_radius,
+                        search_stop_radius=search_stop_radius,
+                    )[0]:
+                        continue
 
                     score, strength = score_candidate_position(
                         candidate_source_position=candidate,
@@ -139,6 +171,9 @@ def coarse_to_fine_grid_search(
                         best_score = score
                         best_position = candidate
                         best_strength = strength
+
+        if not level_candidates:
+            raise ValueError("No candidate positions are inside the detector search cones.")
 
         history.append(
             {
@@ -171,6 +206,10 @@ def grid_search(
     assumed_k,
     search_min,
     search_max,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
     grid_size=21,
 ):
     """Evaluate one full 3D grid and return the best grid point."""
@@ -188,6 +227,17 @@ def grid_search(
         for y in ys:
             for z in zs:
                 candidate = np.array([x, y, z], dtype=float)
+                if not points_in_detector_window(
+                    points=np.array([candidate], dtype=float),
+                    geometry=geometry,
+                    rotations=rotations,
+                    translations=translations,
+                    search_start_distance=search_start_distance,
+                    search_stop_distance=search_stop_distance,
+                    search_start_radius=search_start_radius,
+                    search_stop_radius=search_stop_radius,
+                )[0]:
+                    continue
                 score, strength = score_candidate_position(
                     candidate_source_position=candidate,
                     counts=counts,
@@ -206,6 +256,9 @@ def grid_search(
                     best_score = score
                     best_position = candidate
                     best_strength = strength
+
+    if best_position is None:
+        raise ValueError("No candidate positions are inside the detector search cones.")
 
     history = [
         {
@@ -232,6 +285,10 @@ def random_search(
     assumed_k,
     search_min,
     search_max,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
     random_samples=4000,
     random_seed=0,
 ):
@@ -250,6 +307,20 @@ def random_search(
 
     candidates = rng.uniform(search_min, search_max, size=(int(random_samples), 3))
     candidates = np.vstack([0.5 * (search_min + search_max), candidates])
+    candidates = candidates[
+        points_in_detector_window(
+            points=candidates,
+            geometry=geometry,
+            rotations=rotations,
+            translations=translations,
+            search_start_distance=search_start_distance,
+            search_stop_distance=search_stop_distance,
+            search_start_radius=search_start_radius,
+            search_stop_radius=search_stop_radius,
+        )
+    ]
+    if len(candidates) == 0:
+        raise ValueError("No candidate positions are inside the detector search cones.")
 
     for index, candidate in enumerate(candidates, start=1):
         score, strength = score_candidate_position(

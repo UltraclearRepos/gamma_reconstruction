@@ -37,7 +37,7 @@ def make_default_config():
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
         "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
         "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and relative strengths.
-            {"position": (2.0, -5.0, 10.0), "relative_strength": 1.0},
+            {"position": (-2.0, -5.0, 5.0), "relative_strength": 1.0},
             # {"position": (-10.0, -18.0, 16.0), "relative_strength": 0.65},
             # {"position": (34.0, -7.0, 38.0), "relative_strength": 0.45},
         ],
@@ -45,7 +45,7 @@ def make_default_config():
         "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
         "MEASUREMENT_DURATION_SECONDS": 1.0,  # Duration of one measurement; rates below are multiplied by this.
         "BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Mean background counts per channel per second.
-        "BACKGROUND_CHANNEL_STD_PER_SECOND": 200.0,  # Channel-to-channel background std per second.
+        "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,  # Channel-to-channel background std per second.
         "CHANNEL_SCALE_MEAN": 1.0,  # Mean multiplicative channel sensitivity.
         "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std.
         "GENERATION_K": 4.5,  # >= 0; higher = narrower angular response, so off-axis sources give fewer counts.
@@ -59,13 +59,13 @@ def make_default_config():
         # Reconstruction volume.
         "SEARCH_START_DISTANCE": 5.0,  # Start searching this far from each detector channel along detector forward axis [cm].
         "SEARCH_STOP_DISTANCE": 20.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
-        "SEARCH_START_RADIUS": 2.0,  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
-        "SEARCH_STOP_RADIUS": 8.0,  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
+        "SEARCH_START_RADIUS": 3.0,  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
+        "SEARCH_STOP_RADIUS": 12.0,  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
         # The dataset derives the axis-aligned reconstruction box from this detector-distance cone/tube.
-        "GRID_SIZE": 13,  # ML-EM candidate grid size per axis.
+        "GRID_SIZE": 14,  # ML-EM candidate grid size per axis.
 
         # Mock detector trajectory.
-        "TRAJECTORY_MODE": "line",  # "grid", "line", or "around_center".
+        "TRAJECTORY_MODE": "around_center",  # "grid", "line", or "around_center".
         "TRAJECTORY_CENTER": (0.0, 0.0, 0.0),  # Reference center of the detector trajectory [cm].
         "LATERAL_SPAN": 15.0,  # grid/line: max left/right offset from TRAJECTORY_CENTER [cm].
         "VERTICAL_SPAN": 0.0,  # grid: max up/down offset; line: fixed Z offset from TRAJECTORY_CENTER [cm].
@@ -73,14 +73,14 @@ def make_default_config():
         "DISTANCE_SPAN": 0.0,  # grid only: sinusoidal variation of detector distance [cm].
         "ORBIT_RADIUS": 20.0,  # around_center only: manual nominal orbit radius around TRAJECTORY_CENTER [cm].
         "ORBIT_RADIUS_SPAN": 0,  # around_center only: sinusoidal radius variation during orbit [cm].
-        "ORBIT_ANGLE_SPAN_DEG": 360.0,  # around_center only: covered arc; 180 = half-turn, 360 = full orbit.
-        "ORBIT_START_ANGLE_DEG": 0.0,  # around_center only: starting angle in the XY plane.
+        "ORBIT_ANGLE_SPAN_DEG": 180.0,  # around_center only: covered arc; 180 = half-turn, 360 = full orbit.
+        "ORBIT_START_ANGLE_DEG": -60.0,  # around_center only: starting angle in the XY plane.
         "ORBIT_VERTICAL_SPAN": 0.0,  # around_center only: sinusoidal up/down motion during orbit [cm].
 
-        "ORIENTATION_MODE": "fixed",  # "fixed" or "towards_target"; use "towards_target" to keep looking at TRAJECTORY_CENTER.
+        "ORIENTATION_MODE": "towards_target",  # "fixed" or "towards_target"; use "towards_target" to keep looking at TRAJECTORY_CENTER.
         "FIXED_VIEW_DIRECTION": (0, 1, 0),  # fixed mode only: detector forward direction in world coordinates.
-        "FIXED_SWEEP_Z_DEG": 0.0,  # fixed mode only: left/right viewing sweep around world Z axis.
-        "FIXED_SWEEP_X_DEG": 45.0,  # fixed mode only: up/down viewing sweep around world X axis.
+        "FIXED_SWEEP_Z_RANGE_DEG": 0.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
+        "FIXED_SWEEP_X_RANGE_DEG": 20.0,  # random up/down angle range around world X axis, sampled as +/- this value.
         "ANGULAR_JITTER_DEG": 0.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
@@ -152,8 +152,8 @@ def run_experiment(overrides=None):
         orbit_angle_span_deg=config["ORBIT_ANGLE_SPAN_DEG"],
         orbit_start_angle_deg=config["ORBIT_START_ANGLE_DEG"],
         orbit_vertical_span=config["ORBIT_VERTICAL_SPAN"],
-        fixed_sweep_z_deg=config["FIXED_SWEEP_Z_DEG"],
-        fixed_sweep_x_deg=config["FIXED_SWEEP_X_DEG"],
+        fixed_sweep_z_range_deg=config["FIXED_SWEEP_Z_RANGE_DEG"],
+        fixed_sweep_x_range_deg=config["FIXED_SWEEP_X_RANGE_DEG"],
     )
 
     num_channels = dataset["counts"].shape[1]

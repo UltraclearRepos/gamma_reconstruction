@@ -69,8 +69,8 @@ def generate_synthetic_dataset(
     orbit_angle_span_deg,
     orbit_start_angle_deg,
     orbit_vertical_span,
-    fixed_sweep_z_deg,
-    fixed_sweep_x_deg,
+    fixed_sweep_z_range_deg,
+    fixed_sweep_x_range_deg,
 ):
     """
     Generate one synthetic multi-source experiment.
@@ -151,8 +151,8 @@ def generate_synthetic_dataset(
         orbit_vertical_span=orbit_vertical_span,
         orientation_mode=orientation_mode,
         fixed_view_direction=fixed_view_direction,
-        fixed_sweep_z_deg=fixed_sweep_z_deg,
-        fixed_sweep_x_deg=fixed_sweep_x_deg,
+        fixed_sweep_z_range_deg=fixed_sweep_z_range_deg,
+        fixed_sweep_x_range_deg=fixed_sweep_x_range_deg,
     )
     search_volume = derive_search_volume_from_detector_window(
         geometry=geometry,
