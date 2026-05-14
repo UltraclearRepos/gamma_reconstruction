@@ -29,74 +29,74 @@ from visualization import (
 
 def make_default_config():
     """Return default settings for the synthetic multi-point demo."""
-    search_min = (-15.0, -15.0, -15.0)
-    search_max = (15.0, 15.0, 15.0)
-
     return {
         # Reconstruction method.
-        "reconstruction_method": "mlem",
+        "reconstruction_method": "mlem",  # Currently available: "mlem".
 
         # Mock data generation.
-        "SEED": 11,
-        "NUM_MEASUREMENTS": 30,
-        "TRUE_SOURCE_SPECS": [
+        "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
+        "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
+        "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and relative strengths.
             {"position": (2.0, -5.0, 10.0), "relative_strength": 1.0},
             # {"position": (-10.0, -18.0, 16.0), "relative_strength": 0.65},
             # {"position": (34.0, -7.0, 38.0), "relative_strength": 0.45},
         ],
-        "NUM_CHANNELS": 16,
-        "DIODE_PITCH": 0.15875,
-        "MEASUREMENT_DURATION_SECONDS": 1.0,
-        "BACKGROUND_MEAN_PER_SECOND": 1000.0,
-        "BACKGROUND_CHANNEL_STD_PER_SECOND": 200.0,
-        "CHANNEL_SCALE_MEAN": 1.0,
-        "CHANNEL_SCALE_STD": 0.08,
-        "GENERATION_K": 4.5,
-        "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,  
+        "NUM_CHANNELS": 16,  # Number of detector channels.
+        "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
+        "MEASUREMENT_DURATION_SECONDS": 1.0,  # Duration of one measurement; rates below are multiplied by this.
+        "BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Mean background counts per channel per second.
+        "BACKGROUND_CHANNEL_STD_PER_SECOND": 200.0,  # Channel-to-channel background std per second.
+        "CHANNEL_SCALE_MEAN": 1.0,  # Mean multiplicative channel sensitivity.
+        "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std.
+        "GENERATION_K": 4.5,  # >= 0; higher = narrower angular response, so off-axis sources give fewer counts.
+        "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,  # Peak total source signal rate in the best measurement.
 
         # Assumed reconstruction model.
-        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-        "ASSUMED_CHANNEL_SCALE": 1.0,
-        "ASSUMED_K": 4.5,
+        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Background rate used by reconstruction model.
+        "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
+        "ASSUMED_K": 4.5,  # Angular sensitivity exponent used by reconstruction model.
 
         # Reconstruction volume.
-        "SEARCH_MIN": search_min,
-        "SEARCH_MAX": search_max,
-        "GRID_SIZE": 13,
+        "SEARCH_START_DISTANCE": 5.0,  # Start searching this far from each detector channel along detector forward axis [cm].
+        "SEARCH_STOP_DISTANCE": 20.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
+        "SEARCH_START_RADIUS": 2.0,  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
+        "SEARCH_STOP_RADIUS": 8.0,  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
+        # The dataset derives the axis-aligned reconstruction box from this detector-distance cone/tube.
+        "GRID_SIZE": 13,  # ML-EM candidate grid size per axis.
 
         # Mock detector trajectory.
-        "TRAJECTORY_MODE": "line",
-        "LATERAL_SPAN": 30.0,
-        "VERTICAL_SPAN": 0.0,
-        "BASE_DISTANCE": 20.0,
-        "DISTANCE_SPAN": 0.0,
-        "ORBIT_RADIUS": 130.0,
-        "ORBIT_RADIUS_SPAN": 0,
-        "ORBIT_ANGLE_SPAN_DEG": 360.0,
-        "ORBIT_START_ANGLE_DEG": 0.0,
-        "ORBIT_VERTICAL_SPAN": 0.0,
+        "TRAJECTORY_MODE": "line",  # "grid", "line", or "around_center".
+        "TRAJECTORY_CENTER": (0.0, 0.0, 0.0),  # Reference center of the detector trajectory [cm].
+        "LATERAL_SPAN": 15.0,  # grid/line: max left/right offset from TRAJECTORY_CENTER [cm].
+        "VERTICAL_SPAN": 0.0,  # grid: max up/down offset; line: fixed Z offset from TRAJECTORY_CENTER [cm].
+        "BASE_DISTANCE": 5.0,  # grid/line: nominal detector distance from TRAJECTORY_CENTER [cm].
+        "DISTANCE_SPAN": 0.0,  # grid only: sinusoidal variation of detector distance [cm].
+        "ORBIT_RADIUS": 20.0,  # around_center only: manual nominal orbit radius around TRAJECTORY_CENTER [cm].
+        "ORBIT_RADIUS_SPAN": 0,  # around_center only: sinusoidal radius variation during orbit [cm].
+        "ORBIT_ANGLE_SPAN_DEG": 360.0,  # around_center only: covered arc; 180 = half-turn, 360 = full orbit.
+        "ORBIT_START_ANGLE_DEG": 0.0,  # around_center only: starting angle in the XY plane.
+        "ORBIT_VERTICAL_SPAN": 0.0,  # around_center only: sinusoidal up/down motion during orbit [cm].
 
-        "ORIENTATION_MODE": "fixed",
-        "FIXED_VIEW_DIRECTION": (0, 1, 0),
-        "FIXED_SWEEP_Z_DEG": 60.0,
-        "FIXED_SWEEP_X_DEG": -60.0,
-        "SCAN_CENTER": tuple((np.array(search_min) + np.array(search_max)) / 2.0),
-        "ANGULAR_JITTER_DEG": 20.0,
+        "ORIENTATION_MODE": "fixed",  # "fixed" or "towards_target"; use "towards_target" to keep looking at TRAJECTORY_CENTER.
+        "FIXED_VIEW_DIRECTION": (0, 1, 0),  # fixed mode only: detector forward direction in world coordinates.
+        "FIXED_SWEEP_Z_DEG": 0.0,  # fixed mode only: left/right viewing sweep around world Z axis.
+        "FIXED_SWEEP_X_DEG": 45.0,  # fixed mode only: up/down viewing sweep around world X axis.
+        "ANGULAR_JITTER_DEG": 0.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
-        "NUM_ITERATIONS": 10000,
-        "HISTORY_INTERVAL": 1000,
-        "MAX_SOURCES_TO_REPORT": 1,
-        "MIN_SOURCE_DISTANCE": 8.0,
+        "NUM_ITERATIONS": 4000,  # ML-EM iteration count.
+        "HISTORY_INTERVAL": 1000,  # How often ML-EM stores history snapshots.
+        "MAX_SOURCES_TO_REPORT": 1,  # Number of strongest separated peaks reported from the activity map.
+        "MIN_SOURCE_DISTANCE": 8.0,  # Minimum separation between reported activity peaks [cm].
 
         # Localization metric.
-        "ACTIVITY_MAX_RELATIVE_DROP": 0.5,
+        "ACTIVITY_MAX_RELATIVE_DROP": 0.5,  # Select voxels with activity >= (1 - drop) * max_activity.
 
         # Visualization output.
-        "PRINT_GENERATED_COUNTS_TABLE": True,
-        "UPDATE_FRAME_MAX_VOXELS": 200,
-        "GIF_FPS": 1.0,
-        "AXIS_LIMITS_3D": (
+        "PRINT_GENERATED_COUNTS_TABLE": False,  # Print full generated measurement x channel table.
+        "UPDATE_FRAME_MAX_VOXELS": 200000,  # Max strongest voxels plotted in one history frame.
+        "GIF_FPS": 20.0,  # GIF frame rate for history animation.
+        "AXIS_LIMITS_3D": (  # 3D plot axis limits [cm].
             (-30, 30),
             (-30, 30),
             (-30, 30),
@@ -107,16 +107,12 @@ def make_default_config():
 def build_config(overrides=None):
     """Merge a small override dict into the demo defaults."""
     config = make_default_config()
+    overrides = overrides or {}
     if overrides:
         unknown_keys = sorted(set(overrides) - set(config))
         if unknown_keys:
             raise KeyError(f"Unknown config keys: {unknown_keys}")
         config.update(overrides)
-
-    if "SCAN_CENTER" not in (overrides or {}):
-        config["SCAN_CENTER"] = tuple(
-            (np.array(config["SEARCH_MIN"]) + np.array(config["SEARCH_MAX"])) / 2.0
-        )
 
     return config
 
@@ -140,7 +136,11 @@ def run_experiment(overrides=None):
         generation_k=config["GENERATION_K"],
         peak_total_source_signal_per_second=config["PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND"],
         measurement_duration_seconds=config["MEASUREMENT_DURATION_SECONDS"],
-        scan_center=config["SCAN_CENTER"],
+        trajectory_center=config["TRAJECTORY_CENTER"],
+        search_start_distance=config["SEARCH_START_DISTANCE"],
+        search_stop_distance=config["SEARCH_STOP_DISTANCE"],
+        search_start_radius=config["SEARCH_START_RADIUS"],
+        search_stop_radius=config["SEARCH_STOP_RADIUS"],
         trajectory_mode=config["TRAJECTORY_MODE"],
         angular_jitter_deg=config["ANGULAR_JITTER_DEG"],
         lateral_span=config["LATERAL_SPAN"],
@@ -178,8 +178,12 @@ def run_experiment(overrides=None):
         rotations=dataset["rotations"],
         translations=dataset["translations"],
         **assumed_model,
-        search_min=config["SEARCH_MIN"],
-        search_max=config["SEARCH_MAX"],
+        search_min=dataset["search_min"],
+        search_max=dataset["search_max"],
+        search_start_distance=dataset["search_start_distance"],
+        search_stop_distance=dataset["search_stop_distance"],
+        search_start_radius=dataset["search_start_radius"],
+        search_stop_radius=dataset["search_stop_radius"],
         method=config["reconstruction_method"],
         grid_size=config["GRID_SIZE"],
         num_iterations=config["NUM_ITERATIONS"],
@@ -236,6 +240,17 @@ def print_summary(dataset):
     print(f"Background mean / sample:   {dataset['background_mean']:.1f}")
     print(f"Peak source signal [/s]:    {dataset['peak_total_source_signal_per_second']:.1f}")
     print(f"Peak source signal/sample:  {dataset['peak_total_source_signal']:.1f}")
+    print(
+        "Search distance window [cm]: "
+        f"{dataset['search_start_distance']:.2f} -> {dataset['search_stop_distance']:.2f} "
+        f"(length {dataset['search_distance_window']:.2f})"
+    )
+    print(
+        "Search radius window [cm]:   "
+        f"{dataset['search_start_radius']:.2f} -> {dataset['search_stop_radius']:.2f}"
+    )
+    print(f"Search min [cm]:            {np.round(dataset['search_min'], 4)}")
+    print(f"Search max [cm]:            {np.round(dataset['search_max'], 4)}")
 
 
 def print_generated_counts_table(dataset):

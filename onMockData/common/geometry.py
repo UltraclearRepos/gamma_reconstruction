@@ -8,6 +8,7 @@ import numpy as np
 
 
 EPS = 1e-12
+MIN_TRAJECTORY_DISTANCE = 1.0
 
 
 def normalize(vector):
@@ -105,9 +106,158 @@ def make_detector_geometry(num_channels=16, diode_pitch=0.15875):
     }
 
 
+def detector_extent_points_local(geometry):
+    """
+    Return local detector points that cover the active channel line.
+
+    Channel centers alone miss half a channel at both physical ends, so add
+    the two edge points when the channel width is known.
+    """
+    points = np.asarray(geometry["diode_positions_local"], dtype=float)
+    channel_width = float(geometry.get("channel_width", 0.0))
+    if points.size == 0 or channel_width <= 0.0:
+        return points
+
+    min_x = float(np.min(points[:, 0])) - 0.5 * channel_width
+    max_x = float(np.max(points[:, 0])) + 0.5 * channel_width
+    edge_points = np.array(
+        [
+            [min_x, 0.0, 0.0],
+            [max_x, 0.0, 0.0],
+        ],
+        dtype=float,
+    )
+    return np.vstack([points, edge_points])
+
+
+def derive_search_volume_from_detector_window(
+    geometry,
+    rotations,
+    translations,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
+):
+    """
+    Derive an axis-aligned search box from a detector-relative conical window.
+
+    For every measurement, the searched points start at
+    search_start_distance from every active detector-line point and end at
+    search_stop_distance along that measurement's detector-forward direction.
+    search_start_radius and search_stop_radius define the perpendicular radius
+    of that tube/cone at the corresponding distances.
+    The returned volume is the axis-aligned bounding box around all those
+    start/stop cross sections.
+    """
+    start_distance = float(search_start_distance)
+    stop_distance = float(search_stop_distance)
+    start_radius = float(search_start_radius)
+    stop_radius = float(search_stop_radius)
+    if start_distance < 0.0:
+        raise ValueError("search_start_distance must be >= 0 cm.")
+    if stop_distance <= start_distance:
+        raise ValueError("search_stop_distance must be greater than search_start_distance.")
+    if start_radius < 0.0:
+        raise ValueError("search_start_radius must be >= 0 cm.")
+    if stop_radius < 0.0:
+        raise ValueError("search_stop_radius must be >= 0 cm.")
+
+    rotations = np.asarray(rotations, dtype=float)
+    translations = np.asarray(translations, dtype=float)
+    detector_points_local = detector_extent_points_local(geometry)
+    detector_points_world = (
+        translations[:, np.newaxis, :]
+        + np.einsum("mij,pj->mpi", rotations, detector_points_local)
+    )
+
+    forward_local = np.asarray(geometry["detector_forward_local"], dtype=float)
+    forward_world = np.einsum("mij,j->mi", rotations, forward_local)
+    forward_norms = np.linalg.norm(forward_world, axis=1, keepdims=True)
+    forward_world = forward_world / np.maximum(forward_norms, EPS)
+
+    perpendicular_extent_start = start_radius * np.sqrt(
+        np.maximum(0.0, 1.0 - forward_world[:, np.newaxis, :] ** 2)
+    )
+    perpendicular_extent_stop = stop_radius * np.sqrt(
+        np.maximum(0.0, 1.0 - forward_world[:, np.newaxis, :] ** 2)
+    )
+
+    start_centers = detector_points_world + start_distance * forward_world[:, np.newaxis, :]
+    stop_centers = detector_points_world + stop_distance * forward_world[:, np.newaxis, :]
+    window_min = np.minimum(
+        np.min(start_centers - perpendicular_extent_start, axis=(0, 1)),
+        np.min(stop_centers - perpendicular_extent_stop, axis=(0, 1)),
+    )
+    window_max = np.maximum(
+        np.max(start_centers + perpendicular_extent_start, axis=(0, 1)),
+        np.max(stop_centers + perpendicular_extent_stop, axis=(0, 1)),
+    )
+
+    return {
+        "search_min": window_min,
+        "search_max": window_max,
+        "search_start_distance": start_distance,
+        "search_stop_distance": stop_distance,
+        "search_distance_window": stop_distance - start_distance,
+        "search_start_radius": start_radius,
+        "search_stop_radius": stop_radius,
+    }
+
+
+def points_in_detector_window(
+    points,
+    geometry,
+    rotations,
+    translations,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
+):
+    """Return a mask for points inside the union of detector-facing cones."""
+    points = np.asarray(points, dtype=float)
+    rotations = np.asarray(rotations, dtype=float)
+    translations = np.asarray(translations, dtype=float)
+    start_distance = float(search_start_distance)
+    stop_distance = float(search_stop_distance)
+    start_radius = float(search_start_radius)
+    stop_radius = float(search_stop_radius)
+
+    detector_points_local = detector_extent_points_local(geometry)
+    detector_points_world = (
+        translations[:, np.newaxis, :]
+        + np.einsum("mij,pj->mpi", rotations, detector_points_local)
+    )
+    forward_local = np.asarray(geometry["detector_forward_local"], dtype=float)
+    forward_world = np.einsum("mij,j->mi", rotations, forward_local)
+    forward_world = forward_world / np.maximum(
+        np.linalg.norm(forward_world, axis=1, keepdims=True),
+        EPS,
+    )
+
+    inside = np.zeros(len(points), dtype=bool)
+    distance_window = stop_distance - start_distance
+    for measurement_index, forward in enumerate(forward_world):
+        diffs = points[:, np.newaxis, :] - detector_points_world[measurement_index][np.newaxis, :, :]
+        axial_distance = np.einsum("npj,j->np", diffs, forward)
+        radius = start_radius + (
+            (axial_distance - start_distance) / distance_window
+        ) * (stop_radius - start_radius)
+        perpendicular_squared = np.sum(diffs * diffs, axis=2) - axial_distance * axial_distance
+        in_measurement = (
+            (axial_distance >= start_distance)
+            & (axial_distance <= stop_distance)
+            & (perpendicular_squared <= radius * radius)
+        )
+        inside |= np.any(in_measurement, axis=1)
+
+    return inside
+
+
 def make_detector_trajectory(
     geometry,
-    scan_center,
+    trajectory_center,
     num_measurements,
     rng,
     trajectory_mode="grid",
@@ -127,18 +277,21 @@ def make_detector_trajectory(
     fixed_sweep_x_deg=0.0,
 ):
     """
-    Generate a detector trajectory around the scan center.
+    Generate a detector trajectory around the trajectory center.
 
     All position-like values use centimeters.
 
     trajectory_mode:
         - "grid": one-sided left/right, up/down scan at several distances.
-        - "line": one left-to-right scan line at scan_center height.
-        - "around_center": orbit around scan_center in the XY plane.
+        - "line": one left-to-right scan line at trajectory_center height.
+        - "around_center": orbit around trajectory_center in the XY plane.
+          orbit_angle_span_deg controls the covered arc, e.g. 180 for a
+          half-turn and 360 for a full orbit.
 
     The nominal viewing direction is either constant, or it can be re-aimed
-    towards the provided scan_center.
+    towards the provided trajectory_center.
     """
+    trajectory_center = np.asarray(trajectory_center, dtype=float)
     rotations = np.zeros((num_measurements, 3, 3), dtype=float)
     translations = np.zeros((num_measurements, 3), dtype=float)
 
@@ -204,10 +357,10 @@ def make_detector_trajectory(
                 2.0 * np.pi * distance_phase + 0.6 * row
             )
             standoff_distance += 3.0 * rng.normal()
-            standoff_distance = max(25.0, standoff_distance)
+            standoff_distance = max(MIN_TRAJECTORY_DISTANCE, standoff_distance)
 
             detector_position = (
-                scan_center
+                trajectory_center
                 + lateral_offset * lateral_axis
                 + standoff_distance * standoff_axis
                 + vertical_offset * vertical_axis
@@ -217,9 +370,9 @@ def make_detector_trajectory(
         elif trajectory_mode == "line":
             column_fraction = 0.5 if num_columns == 1 else i / (num_columns - 1)
             lateral_offset = (2.0 * column_fraction - 1.0) * lateral_span
-            standoff_distance = max(25.0, float(base_distance))
+            standoff_distance = max(MIN_TRAJECTORY_DISTANCE, float(base_distance))
             detector_position = (
-                scan_center
+                trajectory_center
                 + lateral_offset * lateral_axis
                 + standoff_distance * standoff_axis
                 + float(vertical_span) * vertical_axis
@@ -235,14 +388,14 @@ def make_detector_trajectory(
                 + math.sin(angle) * lateral_axis
             )
             radius = orbit_radius + orbit_radius_span * math.sin(2.0 * np.pi * orbit_fraction)
-            radius = max(25.0, radius)
+            radius = max(MIN_TRAJECTORY_DISTANCE, radius)
             vertical_offset = orbit_vertical_span * math.sin(2.0 * np.pi * orbit_fraction)
-            detector_position = scan_center + radius * radial_direction + vertical_offset * vertical_axis
+            detector_position = trajectory_center + radius * radial_direction + vertical_offset * vertical_axis
             z_fraction = math.sin(angle)
             x_fraction = 0.0 if orbit_vertical_span == 0.0 else math.sin(2.0 * np.pi * orbit_fraction)
 
         if base_rotation is None:
-            view_direction = scan_center - detector_position
+            view_direction = trajectory_center - detector_position
             if np.linalg.norm(view_direction) < EPS:
                 view_direction = nominal_view_direction
             rotation = rotation_from_local_axis(

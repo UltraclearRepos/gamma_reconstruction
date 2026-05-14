@@ -5,7 +5,11 @@ Synthetic data generation for multi-point source reconstruction experiments.
 import numpy as np
 
 from common.forward_model import compute_detector_response
-from common.geometry import make_detector_geometry, make_detector_trajectory
+from common.geometry import (
+    derive_search_volume_from_detector_window,
+    make_detector_geometry,
+    make_detector_trajectory,
+)
 
 
 def expected_counts_multi_source(
@@ -49,7 +53,11 @@ def generate_synthetic_dataset(
     generation_k,
     peak_total_source_signal_per_second,
     measurement_duration_seconds,
-    scan_center,
+    trajectory_center,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
     trajectory_mode,
     angular_jitter_deg,
     lateral_span,
@@ -71,12 +79,12 @@ def generate_synthetic_dataset(
 
     orientation_mode:
         - "fixed": keep detector pointing in one direction (default).
-        - "towards_target": re-aim detector towards scan_center each measurement.
+        - "towards_target": re-aim detector towards trajectory_center each measurement.
 
     trajectory_mode:
         - "grid": current one-sided scan.
-        - "line": one left-to-right scan line at scan_center height.
-        - "around_center": detector positions orbit around scan_center.
+        - "line": one left-to-right scan line at trajectory_center height.
+        - "around_center": detector positions orbit around trajectory_center.
 
     fixed_view_direction:
         3D vector for "fixed" mode, e.g. (0, 1, 0) or (1, 0, 0).
@@ -103,9 +111,9 @@ def generate_synthetic_dataset(
         }
         for source in source_specs
     ]
-    if scan_center is None:
-        raise ValueError("scan_center must be provided explicitly, e.g. center of reconstruction search volume.")
-    scan_center = np.array(scan_center, dtype=float)
+    if trajectory_center is None:
+        raise ValueError("trajectory_center must be provided explicitly.")
+    trajectory_center = np.array(trajectory_center, dtype=float)
     measurement_duration_seconds = float(measurement_duration_seconds)
     if measurement_duration_seconds <= 0.0:
         raise ValueError("measurement_duration_seconds must be > 0.")
@@ -127,7 +135,7 @@ def generate_synthetic_dataset(
 
     rotations, translations = make_detector_trajectory(
         geometry=geometry,
-        scan_center=scan_center,
+        trajectory_center=trajectory_center,
         num_measurements=num_measurements,
         rng=rng,
         trajectory_mode=trajectory_mode,
@@ -145,6 +153,15 @@ def generate_synthetic_dataset(
         fixed_view_direction=fixed_view_direction,
         fixed_sweep_z_deg=fixed_sweep_z_deg,
         fixed_sweep_x_deg=fixed_sweep_x_deg,
+    )
+    search_volume = derive_search_volume_from_detector_window(
+        geometry=geometry,
+        rotations=rotations,
+        translations=translations,
+        search_start_distance=search_start_distance,
+        search_stop_distance=search_stop_distance,
+        search_start_radius=search_start_radius,
+        search_stop_radius=search_stop_radius,
     )
 
     unit_sources = [
@@ -187,7 +204,14 @@ def generate_synthetic_dataset(
         "translations": translations,
         "geometry": geometry,
         "true_sources": true_sources,
-        "scan_center": scan_center,
+        "trajectory_center": trajectory_center,
+        "search_min": np.array(search_volume["search_min"], dtype=float),
+        "search_max": np.array(search_volume["search_max"], dtype=float),
+        "search_start_distance": search_volume["search_start_distance"],
+        "search_stop_distance": search_volume["search_stop_distance"],
+        "search_distance_window": search_volume["search_distance_window"],
+        "search_start_radius": search_volume["search_start_radius"],
+        "search_stop_radius": search_volume["search_stop_radius"],
         "true_backgrounds": true_backgrounds,
         "true_channel_scales": true_channel_scales,
         "generation_k": generation_k,

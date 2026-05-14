@@ -4,7 +4,7 @@ Reconstruction algorithms for multi-point source experiments.
 
 import numpy as np
 
-from common.geometry import EPS
+from common.geometry import EPS, points_in_detector_window
 from reconstruction_objective import (
     build_system_matrix,
     poisson_negative_log_likelihood,
@@ -22,6 +22,10 @@ def reconstruct_sources(
     assumed_k,
     search_min,
     search_max,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
     method="mlem",
     grid_size=11,
     num_iterations=40,
@@ -45,6 +49,10 @@ def reconstruct_sources(
             assumed_k=assumed_k,
             search_min=search_min,
             search_max=search_max,
+            search_start_distance=search_start_distance,
+            search_stop_distance=search_stop_distance,
+            search_start_radius=search_start_radius,
+            search_stop_radius=search_stop_radius,
             grid_size=grid_size,
             num_iterations=num_iterations,
             history_interval=history_interval,
@@ -55,8 +63,19 @@ def reconstruct_sources(
     raise ValueError(f"Unknown multi-source reconstruction method '{method}'. Use: mlem.")
 
 
-def make_candidate_grid(search_min, search_max, grid_size):
-    """Create candidate source positions on a regular XYZ grid."""
+def make_candidate_grid(
+    search_min,
+    search_max,
+    grid_size,
+    geometry,
+    rotations,
+    translations,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
+):
+    """Create candidate source positions inside the detector-facing cones."""
     search_min = np.array(search_min, dtype=float)
     search_max = np.array(search_max, dtype=float)
 
@@ -70,7 +89,21 @@ def make_candidate_grid(search_min, search_max, grid_size):
             for z in zs:
                 candidate_positions.append(np.array([x, y, z], dtype=float))
 
-    return np.array(candidate_positions, dtype=float)
+    candidate_positions = np.array(candidate_positions, dtype=float)
+    inside = points_in_detector_window(
+        points=candidate_positions,
+        geometry=geometry,
+        rotations=rotations,
+        translations=translations,
+        search_start_distance=search_start_distance,
+        search_stop_distance=search_stop_distance,
+        search_start_radius=search_start_radius,
+        search_stop_radius=search_stop_radius,
+    )
+    candidate_positions = candidate_positions[inside]
+    if len(candidate_positions) == 0:
+        raise ValueError("No candidate voxels are inside the detector search cones.")
+    return candidate_positions
 
 
 def pick_activity_peaks(candidate_positions, activity, max_sources=3, min_distance=8.0):
@@ -119,6 +152,10 @@ def mlem_reconstruction(
     assumed_k,
     search_min,
     search_max,
+    search_start_distance,
+    search_stop_distance,
+    search_start_radius,
+    search_stop_radius,
     grid_size=11,
     num_iterations=40,
     history_interval=5,
@@ -138,6 +175,13 @@ def mlem_reconstruction(
         search_min=search_min,
         search_max=search_max,
         grid_size=grid_size,
+        geometry=geometry,
+        rotations=rotations,
+        translations=translations,
+        search_start_distance=search_start_distance,
+        search_stop_distance=search_stop_distance,
+        search_start_radius=search_start_radius,
+        search_stop_radius=search_stop_radius,
     )
     system_matrix = build_system_matrix(
         candidate_positions=candidate_positions,

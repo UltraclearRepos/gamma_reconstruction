@@ -305,22 +305,24 @@ FIXED_OVERRIDES = {
     ],
     "NUM_CHANNELS": 16,  # Number of detector channels.
     "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
-    "SEARCH_MIN": (-50.0, -50.0, -50.0),  # Minimum x/y/z corner of searched source position volume [cm].
-    "SEARCH_MAX": (50.0, 50.0, 50.0),  # Maximum x/y/z corner of searched source position volume [cm].
+    "SEARCH_START_DISTANCE": 40.0,  # Start searching this far from each detector channel along detector forward axis [cm].
+    "SEARCH_STOP_DISTANCE": 140.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
+    "SEARCH_START_RADIUS": 10.0,  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
+    "SEARCH_STOP_RADIUS": 60.0,  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
     "GRID_SIZE": 13,  # ML-EM candidate grid size per axis.
     "TRAJECTORY_MODE": "grid",  # "grid" or "around_center".
-    "LATERAL_SPAN": 60.0,  # grid only: max left/right position offset from SCAN_CENTER [cm].
-    "VERTICAL_SPAN": 36.0,  # grid only: max up/down position offset from SCAN_CENTER [cm].
-    "BASE_DISTANCE": 100.0,  # grid only: nominal detector distance from SCAN_CENTER [cm].
+    "LATERAL_SPAN": 60.0,  # grid only: max left/right position offset from TRAJECTORY_CENTER [cm].
+    "VERTICAL_SPAN": 36.0,  # grid only: max up/down position offset from TRAJECTORY_CENTER [cm].
+    "BASE_DISTANCE": 100.0,  # grid only: nominal detector distance from TRAJECTORY_CENTER [cm].
     "DISTANCE_SPAN": 18.0,  # grid only: sinusoidal variation of detector distance [cm].
-    "ORBIT_RADIUS": 130.0,  # around_center only: nominal radius of detector orbit around SCAN_CENTER [cm].
+    "ORBIT_RADIUS": 130.0,  # around_center only: nominal radius of detector orbit around TRAJECTORY_CENTER [cm].
     "ORBIT_RADIUS_SPAN": 0,  # around_center only: sinusoidal radius variation during orbit [cm].
     "ORBIT_ANGLE_SPAN_DEG": 360.0,  # around_center only: covered orbit angle; 360 means full circle.
     "ORBIT_START_ANGLE_DEG": 0.0,  # around_center only: starting angle of orbit in XY plane.
     "ORBIT_VERTICAL_SPAN": 0.0,  # around_center only: sinusoidal up/down motion during orbit [cm].
     "ORIENTATION_MODE": "fixed",  # "fixed" or "towards_target"; use "towards_target" for around_center.
     "FIXED_VIEW_DIRECTION": (0, 1, 0),  # e.g. (1, 0, 0) to "look right" in world coords.
-    "SCAN_CENTER": (0.0, 0.0, 0.0),  # Center of scan path; should match reconstruction volume center.
+    "TRAJECTORY_CENTER": (0.0, 0.0, 0.0),  # Reference center of the detector trajectory [cm].
     "NUM_ITERATIONS": 10000,  # ML-EM iteration count. Set back to 10000 if you want to match run_demo exactly.
     "HISTORY_INTERVAL": 1000,  # How often ML-EM stores history snapshots.
     "MAX_SOURCES_TO_REPORT": 1,  # Number of strongest separated peaks reported from the activity map.

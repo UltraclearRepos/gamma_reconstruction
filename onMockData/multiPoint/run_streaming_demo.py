@@ -33,8 +33,8 @@ def print_dataset_summary(dataset):
     counts = dataset["counts"]
     print("=== Streaming multi-point source demo ===")
     print()
-    print("Scan center:")
-    print(dataset["scan_center"])
+    print("Trajectory center:")
+    print(dataset["trajectory_center"])
     print()
     print("True sources:")
     for index, source in enumerate(dataset["true_sources"], start=1):
@@ -224,8 +224,10 @@ def main():
     PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND = 5000.0
 
     # Reconstruction volume.
-    SEARCH_MIN = (-55.0, -55.0, -55.0)
-    SEARCH_MAX = (55.0, 55.0, 55.0)
+    SEARCH_START_DISTANCE = 10.0  # Start searching this far from each detector channel along detector forward axis [cm].
+    SEARCH_STOP_DISTANCE = 120.0  # Stop searching this far from each detector channel; window length = stop - start [cm].
+    SEARCH_START_RADIUS = 5.0  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
+    SEARCH_STOP_RADIUS = 45.0  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
     GRID_SIZE = 13
 
     # Mock detector trajectory.
@@ -234,13 +236,13 @@ def main():
     FIXED_VIEW_DIRECTION = (0, 1, 0)  # e.g. (1, 0, 0) to "look right" in world coords
     FIXED_SWEEP_Z_DEG = 20.0  # fixed mode only: left/right viewing sweep around world Z axis.
     FIXED_SWEEP_X_DEG = -20.0  # fixed mode only: up/down viewing sweep around world X axis.
-    SCAN_CENTER = tuple((np.array(SEARCH_MIN) + np.array(SEARCH_MAX)) / 2.0)  # Center of scan path; should match reconstruction volume center.
+    TRAJECTORY_CENTER = (0.0, 0.0, 0.0)  # Reference center of the detector trajectory [cm].
     ANGULAR_JITTER_DEG = 3.0  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
-    LATERAL_SPAN = 60.0  # grid only: max left/right position offset from SCAN_CENTER [cm].
-    VERTICAL_SPAN = 36.0  # grid only: max up/down position offset from SCAN_CENTER [cm].
-    BASE_DISTANCE = 65.0  # grid only: nominal detector distance from SCAN_CENTER [cm].
+    LATERAL_SPAN = 60.0  # grid only: max left/right position offset from TRAJECTORY_CENTER [cm].
+    VERTICAL_SPAN = 36.0  # grid only: max up/down position offset from TRAJECTORY_CENTER [cm].
+    BASE_DISTANCE = 65.0  # grid only: nominal detector distance from TRAJECTORY_CENTER [cm].
     DISTANCE_SPAN = 18.0  # grid only: sinusoidal variation of detector distance [cm].
-    ORBIT_RADIUS = 120.0  # around_center only: nominal radius of detector orbit around SCAN_CENTER [cm].
+    ORBIT_RADIUS = 120.0  # around_center only: nominal radius of detector orbit around TRAJECTORY_CENTER [cm].
     ORBIT_RADIUS_SPAN = 0  # around_center only: sinusoidal radius variation during orbit [cm].
     ORBIT_ANGLE_SPAN_DEG = 360.0  # around_center only: covered orbit angle; 360 means full circle.
     ORBIT_START_ANGLE_DEG = 0.0  # around_center only: starting angle of orbit in XY plane.
@@ -291,7 +293,11 @@ def main():
         generation_k=GENERATION_K,
         peak_total_source_signal_per_second=PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND,
         measurement_duration_seconds=MEASUREMENT_DURATION_SECONDS,
-        scan_center=SCAN_CENTER,
+        trajectory_center=TRAJECTORY_CENTER,
+        search_start_distance=SEARCH_START_DISTANCE,
+        search_stop_distance=SEARCH_STOP_DISTANCE,
+        search_start_radius=SEARCH_START_RADIUS,
+        search_stop_radius=SEARCH_STOP_RADIUS,
         trajectory_mode=TRAJECTORY_MODE,
         angular_jitter_deg=ANGULAR_JITTER_DEG,
         lateral_span=LATERAL_SPAN,
@@ -329,8 +335,12 @@ def main():
         rotations=dataset["rotations"],
         translations=dataset["translations"],
         **assumed_model,
-        search_min=SEARCH_MIN,
-        search_max=SEARCH_MAX,
+        search_min=dataset["search_min"],
+        search_max=dataset["search_max"],
+        search_start_distance=dataset["search_start_distance"],
+        search_stop_distance=dataset["search_stop_distance"],
+        search_start_radius=dataset["search_start_radius"],
+        search_stop_radius=dataset["search_stop_radius"],
         true_sources=dataset["true_sources"],
         method=STREAMING_METHOD,
         grid_size=GRID_SIZE,
@@ -368,15 +378,17 @@ def main():
         "CHANNEL_SCALE_STD": CHANNEL_SCALE_STD,
         "GENERATION_K": GENERATION_K,
         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND,
-        "SEARCH_MIN": SEARCH_MIN,
-        "SEARCH_MAX": SEARCH_MAX,
+        "SEARCH_START_DISTANCE": SEARCH_START_DISTANCE,
+        "SEARCH_STOP_DISTANCE": SEARCH_STOP_DISTANCE,
+        "SEARCH_START_RADIUS": SEARCH_START_RADIUS,
+        "SEARCH_STOP_RADIUS": SEARCH_STOP_RADIUS,
         "GRID_SIZE": GRID_SIZE,
         "TRAJECTORY_MODE": TRAJECTORY_MODE,
         "ORIENTATION_MODE": ORIENTATION_MODE,
         "FIXED_VIEW_DIRECTION": FIXED_VIEW_DIRECTION,
         "FIXED_SWEEP_Z_DEG": FIXED_SWEEP_Z_DEG,
         "FIXED_SWEEP_X_DEG": FIXED_SWEEP_X_DEG,
-        "SCAN_CENTER": SCAN_CENTER,
+        "TRAJECTORY_CENTER": TRAJECTORY_CENTER,
         "ANGULAR_JITTER_DEG": ANGULAR_JITTER_DEG,
         "LATERAL_SPAN": LATERAL_SPAN,
         "VERTICAL_SPAN": VERTICAL_SPAN,
