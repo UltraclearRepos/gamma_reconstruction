@@ -23,6 +23,7 @@ def build_system_matrix(
     translations,
     assumed_channel_scales,
     assumed_k,
+    assumed_distance_power,
 ):
     """
     Build H matrix for voxel reconstruction.
@@ -45,6 +46,7 @@ def build_system_matrix(
             translations=translations,
             channel_scales=assumed_channel_scales,
             k=assumed_k,
+            distance_power=assumed_distance_power,
         )
         system_matrix[:, voxel_index] = response.ravel()
 

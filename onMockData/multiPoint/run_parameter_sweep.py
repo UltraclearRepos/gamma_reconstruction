@@ -27,10 +27,11 @@ SWEEP_DEFAULTS = {
     "CHANNEL_SCALE_MEAN": 1.0,  # Mean multiplicative channel sensitivity used during data generation.
     "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std used during data generation.
     "GENERATION_K": 4.5,  # >= 0; higher = narrower angular response, so off-axis sources give fewer counts.
-    "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,  # Peak total source signal rate in the best measurement.
+    "GENERATION_DISTANCE_POWER": 1.0,  # Distance falloff exponent used during data generation.
     "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Background rate used by reconstruction model.
     "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
     "ASSUMED_K": 4.5,  # Angular sensitivity exponent used by reconstruction model.
+    "ASSUMED_DISTANCE_POWER": 1.0,  # Distance falloff exponent used by reconstruction model.
     "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
     "FIXED_SWEEP_Z_RANGE_DEG": 0.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
     "FIXED_SWEEP_X_RANGE_DEG": 0.0,  # random up/down angle range around world X axis, sampled as +/- this value.
@@ -58,35 +59,35 @@ SWEEP_GROUPS = [
     #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
     #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
     #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
+    #             "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 5000.0},),
     #         },  # background/source = 0.2
     #         {
     #             "SEED": [11, 12, 13, 14, 15],
     #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
     #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
     #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2000.0,
+    #             "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 2000.0},),
     #         },  # background/source = 0.5
     #         {
     #             "SEED": [11, 12, 13, 14, 15],
     #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
     #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
     #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
+    #             "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 1000.0},),
     #         },  # background/source = 1.0
     #         {
     #             "SEED": [11, 12, 13, 14, 15],
     #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
     #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
     #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 500.0,
+    #             "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 500.0},),
     #         },  # background/source = 2.0
     #         {
     #             "SEED": [11, 12, 13, 14, 15],
     #             "BACKGROUND_MEAN_PER_SECOND": 1000.0,
     #             "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
     #             "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-    #             "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 200.0,
+    #             "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 200.0},),
     #         },  # background/source = 5.0
     #     ],
     # },
@@ -98,9 +99,10 @@ SWEEP_GROUPS = [
             "FIXED_SWEEP_X_RANGE_DEG": 60.0,  # Best tested up/down random angle range around world X axis.
             "BACKGROUND_MEAN_PER_SECOND": 1000.0,  # True background level.
             "BACKGROUND_CHANNEL_STD_PER_SECOND": 0.0,  # Channel-to-channel background std per second.
-            "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,  # background/source = 0.2.
             "GENERATION_K": 4.5,  # Generated angular response.
             "ASSUMED_K": 4.5,  # Matched angular response used by reconstruction.
+            "GENERATION_DISTANCE_POWER": 1.0,  # Generated distance falloff exponent.
+            "ASSUMED_DISTANCE_POWER": 1.0,  # Matched distance falloff exponent used by reconstruction.
             "CHANNEL_SCALE_MEAN": 1.0,  # Generated global channel sensitivity.
             "ASSUMED_CHANNEL_SCALE": 1.0,  # Matched global channel sensitivity used by reconstruction.
         },
@@ -150,7 +152,10 @@ SWEEP_GROUPS = [
     #     "name": "source_signal",
     #     "base": {},
     #     "sweep": {
-    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": [500.0, 1000.0, 2500.0, 5000.0, 10000.0, 30000.0],  # Peak total source signal rate in the best measurement.
+    #         "TRUE_SOURCE_SPECS": [
+    #             ({"position": (18.0, -20.0, 20.0), "strength_per_second": value},)
+    #             for value in [500.0, 1000.0, 2500.0, 5000.0, 10000.0, 30000.0]
+    #         ],
     #     },
     # },
     # {
@@ -186,7 +191,7 @@ SWEEP_GROUPS = [
     #         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
     #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
     #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 500.0,
+    #         "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 500.0},),
     #     },
     #     "sweep": {
     #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
@@ -200,7 +205,7 @@ SWEEP_GROUPS = [
     #         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
     #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
     #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
+    #         "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 1000.0},),
     #     },
     #     "sweep": {
     #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
@@ -214,7 +219,7 @@ SWEEP_GROUPS = [
     #         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
     #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
     #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2000.0,
+    #         "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 2000.0},),
     #     },
     #     "sweep": {
     #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
@@ -228,7 +233,7 @@ SWEEP_GROUPS = [
     #         "BACKGROUND_MEAN_PER_SECOND": 1000.0,
     #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,
     #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,
-    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
+    #         "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 5000.0},),
     #     },
     #     "sweep": {
     #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
@@ -242,7 +247,7 @@ SWEEP_GROUPS = [
     #         "BACKGROUND_MEAN_PER_SECOND": 5000.0,
     #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
     #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
-    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 1000.0,
+    #         "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 1000.0},),
     #     },
     #     "sweep": {
     #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
@@ -256,7 +261,7 @@ SWEEP_GROUPS = [
     #         "BACKGROUND_MEAN_PER_SECOND": 5000.0,
     #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
     #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
-    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 2500.0,
+    #         "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 2500.0},),
     #     },
     #     "sweep": {
     #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
@@ -270,7 +275,7 @@ SWEEP_GROUPS = [
     #         "BACKGROUND_MEAN_PER_SECOND": 5000.0,
     #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
     #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
-    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,
+    #         "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 5000.0},),
     #     },
     #     "sweep": {
     #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
@@ -284,7 +289,7 @@ SWEEP_GROUPS = [
     #         "BACKGROUND_MEAN_PER_SECOND": 5000.0,
     #         "BACKGROUND_CHANNEL_STD_PER_SECOND": 300.0,
     #         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 5000.0,
-    #         "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 10000.0,
+    #         "TRUE_SOURCE_SPECS": ({"position": (18.0, -20.0, 20.0), "strength_per_second": 10000.0},),
     #     },
     #     "sweep": {
     #         "FIXED_SWEEP_Z_RANGE_DEG": [45.0, 60.0],  # random left/right angle range around world Z axis, sampled as +/- this value.
@@ -300,8 +305,8 @@ FIXED_OVERRIDES = {
     "reconstruction_method": "mlem",  # Currently available: "mlem".
     "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
     "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
-    "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and relative strengths.
-        {"position": (18.0, -20.0, 20.0), "relative_strength": 1.0},
+    "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and source strengths [/s].
+        {"position": (18.0, -20.0, 20.0), "strength_per_second": 5000.0},
     ],
     "NUM_CHANNELS": 16,  # Number of detector channels.
     "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
@@ -325,6 +330,7 @@ FIXED_OVERRIDES = {
     "TRAJECTORY_CENTER": (0.0, 0.0, 0.0),  # Reference center of the detector trajectory [cm].
     "NUM_ITERATIONS": 10000,  # ML-EM iteration count. Set back to 10000 if you want to match run_demo exactly.
     "HISTORY_INTERVAL": 1000,  # How often ML-EM stores history snapshots.
+    "SPARSITY_LAMBDA": 0.0,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
     "MAX_SOURCES_TO_REPORT": 1,  # Number of strongest separated peaks reported from the activity map.
     "MIN_SOURCE_DISTANCE": 8.0,  # Minimum separation between reported activity peaks [cm].
     "ACTIVITY_MAX_RELATIVE_DROP": 0.5,  # Select voxels with activity >= (1 - drop) * max_activity.
@@ -443,13 +449,18 @@ def summarize_run(case_index, group_name, parameter_overrides, experiment, elaps
     first_estimated_position = first_estimated["position"] if first_estimated else None
     first_estimated_activity = first_estimated["activity"] if first_estimated else np.nan
 
+    total_source_strength_per_second = sum(
+        float(source["strength_per_second"])
+        for source in config["TRUE_SOURCE_SPECS"]
+    )
+
     row = {
         "case_index": int(case_index),
         "sweep_group": group_name,
         "elapsed_seconds": float(elapsed_seconds),
         "background_source_ratio": float(
             config["BACKGROUND_MEAN_PER_SECOND"]
-            / config["PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND"]
+            / total_source_strength_per_second
         ),
         "estimated_peak_activity": float(first_estimated_activity),
         "estimated_peak_error_cm": float(estimated_distances["distance_mean"]),

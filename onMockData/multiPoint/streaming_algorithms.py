@@ -47,6 +47,8 @@ def reconstruct_sources(
     assumed_backgrounds,
     assumed_channel_scales,
     assumed_k,
+    assumed_distance_power,
+    sparsity_lambda,
     search_min,
     search_max,
     search_start_distance,
@@ -86,6 +88,8 @@ def reconstruct_sources(
             assumed_backgrounds=assumed_backgrounds,
             assumed_channel_scales=assumed_channel_scales,
             assumed_k=assumed_k,
+            assumed_distance_power=assumed_distance_power,
+            sparsity_lambda=sparsity_lambda,
             search_min=search_min,
             search_max=search_max,
             search_start_distance=search_start_distance,
@@ -115,6 +119,8 @@ def reconstruct_sources(
             assumed_backgrounds=assumed_backgrounds,
             assumed_channel_scales=assumed_channel_scales,
             assumed_k=assumed_k,
+            assumed_distance_power=assumed_distance_power,
+            sparsity_lambda=sparsity_lambda,
             search_min=search_min,
             search_max=search_max,
             search_start_distance=search_start_distance,
@@ -150,6 +156,8 @@ def streaming_mlem_reconstruction(
     assumed_backgrounds,
     assumed_channel_scales,
     assumed_k,
+    assumed_distance_power,
+    sparsity_lambda,
     search_min,
     search_max,
     search_start_distance,
@@ -177,6 +185,9 @@ def streaming_mlem_reconstruction(
     """
     num_measurements, num_channels = counts.shape
     chunk_size = max(1, int(measurements_per_update))
+    sparsity_lambda = float(sparsity_lambda)
+    if sparsity_lambda < 0.0:
+        raise ValueError("sparsity_lambda must be >= 0.")
     avoid_detector_strength = float(avoid_detector_strength)
     avoid_detector_decay_per_update = float(avoid_detector_decay_per_update)
     if not 0.0 <= avoid_detector_strength <= 1.0:
@@ -214,6 +225,7 @@ def streaming_mlem_reconstruction(
             translations=translations[start_index:end_index],
             assumed_channel_scales=assumed_channel_scales,
             assumed_k=assumed_k,
+            assumed_distance_power=assumed_distance_power,
         )
         counts_block = counts[start_index:end_index].ravel()
         backgrounds_block = np.broadcast_to(
@@ -255,7 +267,7 @@ def streaming_mlem_reconstruction(
                 activity=activity,
             )
             ratio = counts_flat / np.maximum(predicted_counts, EPS)
-            correction = (system_matrix.T @ ratio) / np.maximum(sensitivity, EPS)
+            correction = (system_matrix.T @ ratio) / np.maximum(sensitivity + sparsity_lambda, EPS)
             activity *= correction
             activity = np.maximum(activity, EPS)
 
@@ -338,6 +350,8 @@ def streaming_incremental_mlem_reconstruction(
     assumed_backgrounds,
     assumed_channel_scales,
     assumed_k,
+    assumed_distance_power,
+    sparsity_lambda,
     search_min,
     search_max,
     search_start_distance,
@@ -370,6 +384,9 @@ def streaming_incremental_mlem_reconstruction(
     relaxation = float(relaxation)
     if not 0.0 < relaxation <= 1.0:
         raise ValueError("relaxation must be in the range (0, 1].")
+    sparsity_lambda = float(sparsity_lambda)
+    if sparsity_lambda < 0.0:
+        raise ValueError("sparsity_lambda must be >= 0.")
     avoid_detector_strength = float(avoid_detector_strength)
     avoid_detector_decay_per_update = float(avoid_detector_decay_per_update)
     if not 0.0 <= avoid_detector_strength <= 1.0:
@@ -407,6 +424,7 @@ def streaming_incremental_mlem_reconstruction(
             translations=translations[start_index:end_index],
             assumed_channel_scales=assumed_channel_scales,
             assumed_k=assumed_k,
+            assumed_distance_power=assumed_distance_power,
         )
         counts_block = counts[start_index:end_index].ravel()
         backgrounds_block = np.broadcast_to(
@@ -444,7 +462,7 @@ def streaming_incremental_mlem_reconstruction(
                 activity=activity,
             )
             ratio = counts_block / np.maximum(predicted_counts, EPS)
-            correction = (response_block.T @ ratio) / np.maximum(sensitivity_block, EPS)
+            correction = (response_block.T @ ratio) / np.maximum(sensitivity_block + sparsity_lambda, EPS)
             correction = np.maximum(correction, EPS)
             correction = correction ** relaxation
             activity *= correction

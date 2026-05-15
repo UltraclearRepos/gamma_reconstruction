@@ -20,6 +20,7 @@ def expected_counts_multi_source(
     channel_scales,
     backgrounds,
     k,
+    distance_power,
 ):
     """Forward model for several point sources."""
     mean_counts = np.broadcast_to(backgrounds, (len(translations), len(backgrounds))).copy()
@@ -32,6 +33,7 @@ def expected_counts_multi_source(
             translations=translations,
             channel_scales=channel_scales,
             k=k,
+            distance_power=distance_power,
         )
         mean_counts += source["strength"] * response
 
@@ -51,7 +53,7 @@ def generate_synthetic_dataset(
     channel_scale_mean,
     channel_scale_std,
     generation_k,
-    peak_total_source_signal_per_second,
+    generation_distance_power,
     measurement_duration_seconds,
     trajectory_center,
     search_start_distance,
@@ -89,9 +91,9 @@ def generate_synthetic_dataset(
     fixed_view_direction:
         3D vector for "fixed" mode, e.g. (0, 1, 0) or (1, 0, 0).
 
-    background_mean_per_second and peak_total_source_signal_per_second are
-    rates. They are multiplied by measurement_duration_seconds to generate
-    counts for one measurement.
+    background_mean_per_second and source strength_per_second values are rates.
+    They are multiplied by measurement_duration_seconds to generate counts for
+    one measurement.
 
     The output keeps true_sources as a list because multi-point algorithms may
     reconstruct a map rather than one estimated position.
@@ -104,23 +106,32 @@ def generate_synthetic_dataset(
     if not source_specs:
         raise ValueError("source_specs must contain at least one source.")
 
-    true_sources = [
-        {
-            "position": np.array(source["position"], dtype=float),
-            "relative_strength": float(source["relative_strength"]),
-        }
-        for source in source_specs
-    ]
-    if trajectory_center is None:
-        raise ValueError("trajectory_center must be provided explicitly.")
-    trajectory_center = np.array(trajectory_center, dtype=float)
     measurement_duration_seconds = float(measurement_duration_seconds)
     if measurement_duration_seconds <= 0.0:
         raise ValueError("measurement_duration_seconds must be > 0.")
 
+    true_sources = []
+    for source_index, source in enumerate(source_specs, start=1):
+        if "strength_per_second" not in source:
+            raise KeyError(
+                f"source_specs[{source_index}] must define strength_per_second."
+            )
+        strength_per_second = float(source["strength_per_second"])
+        if strength_per_second < 0.0:
+            raise ValueError("source strength_per_second must be >= 0.")
+        true_sources.append(
+            {
+                "position": np.array(source["position"], dtype=float),
+                "strength_per_second": strength_per_second,
+                "strength": strength_per_second * measurement_duration_seconds,
+            }
+        )
+    if trajectory_center is None:
+        raise ValueError("trajectory_center must be provided explicitly.")
+    trajectory_center = np.array(trajectory_center, dtype=float)
+
     background_mean = float(background_mean_per_second) * measurement_duration_seconds
     background_channel_std = float(background_channel_std_per_second) * measurement_duration_seconds
-    peak_total_source_signal = float(peak_total_source_signal_per_second) * measurement_duration_seconds
 
     true_backgrounds = rng.normal(
         loc=background_mean,
@@ -164,28 +175,6 @@ def generate_synthetic_dataset(
         search_stop_radius=search_stop_radius,
     )
 
-    unit_sources = [
-        {
-            "position": source["position"],
-            "strength": source["relative_strength"],
-        }
-        for source in true_sources
-    ]
-    unit_source_counts = expected_counts_multi_source(
-        sources=unit_sources,
-        geometry=geometry,
-        rotations=rotations,
-        translations=translations,
-        channel_scales=true_channel_scales,
-        backgrounds=np.zeros(num_channels, dtype=float),
-        k=generation_k,
-    )
-    strongest_measurement_signal = max(float(np.max(np.mean(unit_source_counts, axis=1))), 1e-12)
-    strength_scale = peak_total_source_signal / strongest_measurement_signal
-
-    for source in true_sources:
-        source["strength"] = strength_scale * source.pop("relative_strength")
-
     mean_counts = expected_counts_multi_source(
         sources=true_sources,
         geometry=geometry,
@@ -194,6 +183,7 @@ def generate_synthetic_dataset(
         channel_scales=true_channel_scales,
         backgrounds=true_backgrounds,
         k=generation_k,
+        distance_power=generation_distance_power,
     )
 
     noisy_counts = rng.poisson(mean_counts).astype(float)
@@ -215,6 +205,7 @@ def generate_synthetic_dataset(
         "true_backgrounds": true_backgrounds,
         "true_channel_scales": true_channel_scales,
         "generation_k": generation_k,
+        "generation_distance_power": generation_distance_power,
         "measurement_duration_seconds": measurement_duration_seconds,
         "background_mean_per_second": background_mean_per_second,
         "background_mean": background_mean,
@@ -222,7 +213,5 @@ def generate_synthetic_dataset(
         "background_channel_std": background_channel_std,
         "channel_scale_mean": channel_scale_mean,
         "channel_scale_std": channel_scale_std,
-        "peak_total_source_signal_per_second": peak_total_source_signal_per_second,
-        "peak_total_source_signal": peak_total_source_signal,
         "trajectory_mode": trajectory_mode,
     }

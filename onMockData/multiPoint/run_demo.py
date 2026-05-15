@@ -35,11 +35,11 @@ def make_default_config():
 
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
-        "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
-        "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and relative strengths.
-            {"position": (-2.0, -5.0, 5.0), "relative_strength": 1.0},
-            # {"position": (-10.0, -18.0, 16.0), "relative_strength": 0.65},
-            # {"position": (34.0, -7.0, 38.0), "relative_strength": 0.45},
+        "NUM_MEASUREMENTS": 30,  # Number of detector positions / generated measurements.
+        "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and source strengths [/s].
+            {"position": (0.0, -5.0, 0.0), "strength_per_second": 5000.0},
+            # {"position": (-10.0, -18.0, 16.0), "strength_per_second": 3250.0},
+            # {"position": (34.0, -7.0, 38.0), "strength_per_second": 2250.0},
         ],
         "NUM_CHANNELS": 16,  # Number of detector channels.
         "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
@@ -49,12 +49,13 @@ def make_default_config():
         "CHANNEL_SCALE_MEAN": 1.0,  # Mean multiplicative channel sensitivity.
         "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std.
         "GENERATION_K": 4.5,  # >= 0; higher = narrower angular response, so off-axis sources give fewer counts.
-        "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": 5000.0,  # Peak total source signal rate in the best measurement.
+        "GENERATION_DISTANCE_POWER": 1.0,  # Distance falloff exponent: response ~= 1 / distance^power.
 
         # Assumed reconstruction model.
         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Background rate used by reconstruction model.
         "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
         "ASSUMED_K": 4.5,  # Angular sensitivity exponent used by reconstruction model.
+        "ASSUMED_DISTANCE_POWER": 1.0,  # Distance falloff exponent used by reconstruction model.
 
         # Reconstruction volume.
         "SEARCH_START_DISTANCE": 5.0,  # Start searching this far from each detector channel along detector forward axis [cm].
@@ -80,12 +81,13 @@ def make_default_config():
         "ORIENTATION_MODE": "towards_target",  # "fixed" or "towards_target"; use "towards_target" to keep looking at TRAJECTORY_CENTER.
         "FIXED_VIEW_DIRECTION": (0, 1, 0),  # fixed mode only: detector forward direction in world coordinates.
         "FIXED_SWEEP_Z_RANGE_DEG": 0.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
-        "FIXED_SWEEP_X_RANGE_DEG": 20.0,  # random up/down angle range around world X axis, sampled as +/- this value.
+        "FIXED_SWEEP_X_RANGE_DEG": 0.0,  # random up/down angle range around world X axis, sampled as +/- this value.
         "ANGULAR_JITTER_DEG": 0.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
         "NUM_ITERATIONS": 4000,  # ML-EM iteration count.
-        "HISTORY_INTERVAL": 1000,  # How often ML-EM stores history snapshots.
+        "HISTORY_INTERVAL": 200,  # How often ML-EM stores history snapshots.
+        "SPARSITY_LAMBDA": 1.0,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
         "MAX_SOURCES_TO_REPORT": 1,  # Number of strongest separated peaks reported from the activity map.
         "MIN_SOURCE_DISTANCE": 8.0,  # Minimum separation between reported activity peaks [cm].
 
@@ -93,9 +95,9 @@ def make_default_config():
         "ACTIVITY_MAX_RELATIVE_DROP": 0.5,  # Select voxels with activity >= (1 - drop) * max_activity.
 
         # Visualization output.
-        "PRINT_GENERATED_COUNTS_TABLE": False,  # Print full generated measurement x channel table.
+        "PRINT_GENERATED_COUNTS_TABLE": True,  # Print full generated measurement x channel table.
         "UPDATE_FRAME_MAX_VOXELS": 200000,  # Max strongest voxels plotted in one history frame.
-        "GIF_FPS": 20.0,  # GIF frame rate for history animation.
+        "GIF_FPS": 5.0,  # GIF frame rate for history animation.
         "AXIS_LIMITS_3D": (  # 3D plot axis limits [cm].
             (-30, 30),
             (-30, 30),
@@ -134,7 +136,7 @@ def run_experiment(overrides=None):
         channel_scale_mean=config["CHANNEL_SCALE_MEAN"],
         channel_scale_std=config["CHANNEL_SCALE_STD"],
         generation_k=config["GENERATION_K"],
-        peak_total_source_signal_per_second=config["PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND"],
+        generation_distance_power=config["GENERATION_DISTANCE_POWER"],
         measurement_duration_seconds=config["MEASUREMENT_DURATION_SECONDS"],
         trajectory_center=config["TRAJECTORY_CENTER"],
         search_start_distance=config["SEARCH_START_DISTANCE"],
@@ -170,6 +172,7 @@ def run_experiment(overrides=None):
             dtype=float,
         ),
         "assumed_k": config["ASSUMED_K"],
+        "assumed_distance_power": config["ASSUMED_DISTANCE_POWER"],
     }
 
     result = reconstruct_sources(
@@ -188,6 +191,7 @@ def run_experiment(overrides=None):
         grid_size=config["GRID_SIZE"],
         num_iterations=config["NUM_ITERATIONS"],
         history_interval=config["HISTORY_INTERVAL"],
+        sparsity_lambda=config["SPARSITY_LAMBDA"],
         max_sources=config["MAX_SOURCES_TO_REPORT"],
         min_source_distance=config["MIN_SOURCE_DISTANCE"],
     )
@@ -223,7 +227,8 @@ def print_summary(dataset):
         print(
             " "
             f"S{index}: position={np.round(source['position'], 4)}, "
-            f"strength={source['strength']:.2f}"
+            f"strength_per_second={source['strength_per_second']:.2f}, "
+            f"strength_per_sample={source['strength']:.2f}"
         )
 
     print()
@@ -238,8 +243,6 @@ def print_summary(dataset):
     print(f"Measurement duration [s]:   {dataset['measurement_duration_seconds']:.2f}")
     print(f"Background mean [/s]:       {dataset['background_mean_per_second']:.1f}")
     print(f"Background mean / sample:   {dataset['background_mean']:.1f}")
-    print(f"Peak source signal [/s]:    {dataset['peak_total_source_signal_per_second']:.1f}")
-    print(f"Peak source signal/sample:  {dataset['peak_total_source_signal']:.1f}")
     print(
         "Search distance window [cm]: "
         f"{dataset['search_start_distance']:.2f} -> {dataset['search_stop_distance']:.2f} "

@@ -41,7 +41,8 @@ def print_dataset_summary(dataset):
         print(
             " "
             f"S{index}: position={np.round(source['position'], 4)}, "
-            f"strength={source['strength']:.2f}"
+            f"strength_per_second={source['strength_per_second']:.2f}, "
+            f"strength_per_sample={source['strength']:.2f}"
         )
     print()
     print(
@@ -55,8 +56,6 @@ def print_dataset_summary(dataset):
     print(f"Measurement duration [s]:   {dataset['measurement_duration_seconds']:.2f}")
     print(f"Background mean [/s]:       {dataset['background_mean_per_second']:.1f}")
     print(f"Background mean / sample:   {dataset['background_mean']:.1f}")
-    print(f"Peak source signal [/s]:    {dataset['peak_total_source_signal_per_second']:.1f}")
-    print(f"Peak source signal/sample:  {dataset['peak_total_source_signal']:.1f}")
 
 
 def print_generated_counts_table(dataset):
@@ -209,9 +208,9 @@ def main():
     SEED = 11
     NUM_MEASUREMENTS = 50
     TRUE_SOURCE_SPECS = [
-        {"position": (18.0, -20.0, 20.0), "relative_strength": 1.0},
-        # {"position": (-10.0, -18.0, 16.0), "relative_strength": 0.65},
-        # {"position": (34.0, -7.0, 38.0), "relative_strength": 0.45},
+        {"position": (18.0, -20.0, 20.0), "strength_per_second": 5000.0},
+        # {"position": (-10.0, -18.0, 16.0), "strength_per_second": 3250.0},
+        # {"position": (34.0, -7.0, 38.0), "strength_per_second": 2250.0},
     ]
     NUM_CHANNELS = 16
     DIODE_PITCH = 0.15875  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
@@ -221,7 +220,7 @@ def main():
     CHANNEL_SCALE_MEAN = 1.0
     CHANNEL_SCALE_STD = 0.08
     GENERATION_K = 4.5  # >= 0; sensible ~0..10. Higher = narrower angular response, so off-axis sources give fewer counts.
-    PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND = 5000.0
+    GENERATION_DISTANCE_POWER = 1.0  # Distance falloff exponent: response ~= 1 / distance^power.
 
     # Reconstruction volume.
     SEARCH_START_DISTANCE = 10.0  # Start searching this far from each detector channel along detector forward axis [cm].
@@ -252,12 +251,14 @@ def main():
     ASSUMED_BACKGROUND_MEAN_PER_SECOND = BACKGROUND_MEAN_PER_SECOND
     ASSUMED_CHANNEL_SCALE = CHANNEL_SCALE_MEAN
     ASSUMED_K = GENERATION_K
+    ASSUMED_DISTANCE_POWER = GENERATION_DISTANCE_POWER
 
     # Streaming reconstruction algorithm.
     STREAMING_METHOD = "incremental_mlem"  # "prefix_mlem" or "incremental_mlem"
     RELAXATION = 0.95  # used by incremental_mlem; valid range: (0, 1];  1.0 = no relaxation (standard MLEM); smaller = more conservative updates
     INNER_ITERATIONS_PER_UPDATE = 50
     MEASUREMENTS_PER_UPDATE = 2
+    SPARSITY_LAMBDA = 0.0  # L1-like activity penalty; increase to suppress diffuse weak voxels.
     MAX_SOURCES_TO_REPORT = 1
     MIN_SOURCE_DISTANCE = 8.0
     AVOID_DETECTOR_STRENGTH = 0.2  # 0 disables; how much distance is penalized
@@ -291,7 +292,7 @@ def main():
         channel_scale_mean=CHANNEL_SCALE_MEAN,
         channel_scale_std=CHANNEL_SCALE_STD,
         generation_k=GENERATION_K,
-        peak_total_source_signal_per_second=PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND,
+        generation_distance_power=GENERATION_DISTANCE_POWER,
         measurement_duration_seconds=MEASUREMENT_DURATION_SECONDS,
         trajectory_center=TRAJECTORY_CENTER,
         search_start_distance=SEARCH_START_DISTANCE,
@@ -327,6 +328,7 @@ def main():
         ),
         "assumed_channel_scales": np.full(num_channels, ASSUMED_CHANNEL_SCALE, dtype=float),
         "assumed_k": ASSUMED_K,
+        "assumed_distance_power": ASSUMED_DISTANCE_POWER,
     }
 
     result = reconstruct_sources(
@@ -346,6 +348,7 @@ def main():
         grid_size=GRID_SIZE,
         inner_iterations_per_update=INNER_ITERATIONS_PER_UPDATE,
         measurements_per_update=MEASUREMENTS_PER_UPDATE,
+        sparsity_lambda=SPARSITY_LAMBDA,
         max_sources=MAX_SOURCES_TO_REPORT,
         min_source_distance=MIN_SOURCE_DISTANCE,
         relaxation=RELAXATION,
@@ -377,7 +380,7 @@ def main():
         "CHANNEL_SCALE_MEAN": CHANNEL_SCALE_MEAN,
         "CHANNEL_SCALE_STD": CHANNEL_SCALE_STD,
         "GENERATION_K": GENERATION_K,
-        "PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND": PEAK_TOTAL_SOURCE_SIGNAL_PER_SECOND,
+        "GENERATION_DISTANCE_POWER": GENERATION_DISTANCE_POWER,
         "SEARCH_START_DISTANCE": SEARCH_START_DISTANCE,
         "SEARCH_STOP_DISTANCE": SEARCH_STOP_DISTANCE,
         "SEARCH_START_RADIUS": SEARCH_START_RADIUS,
@@ -402,10 +405,12 @@ def main():
         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": ASSUMED_BACKGROUND_MEAN_PER_SECOND,
         "ASSUMED_CHANNEL_SCALE": ASSUMED_CHANNEL_SCALE,
         "ASSUMED_K": ASSUMED_K,
+        "ASSUMED_DISTANCE_POWER": ASSUMED_DISTANCE_POWER,
         "STREAMING_METHOD": STREAMING_METHOD,
         "RELAXATION": RELAXATION,
         "INNER_ITERATIONS_PER_UPDATE": INNER_ITERATIONS_PER_UPDATE,
         "MEASUREMENTS_PER_UPDATE": MEASUREMENTS_PER_UPDATE,
+        "SPARSITY_LAMBDA": SPARSITY_LAMBDA,
         "MAX_SOURCES_TO_REPORT": MAX_SOURCES_TO_REPORT,
         "MIN_SOURCE_DISTANCE": MIN_SOURCE_DISTANCE,
         "AVOID_DETECTOR_STRENGTH": AVOID_DETECTOR_STRENGTH,

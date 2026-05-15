@@ -20,6 +20,8 @@ def reconstruct_sources(
     assumed_backgrounds,
     assumed_channel_scales,
     assumed_k,
+    assumed_distance_power,
+    sparsity_lambda,
     search_min,
     search_max,
     search_start_distance,
@@ -47,6 +49,8 @@ def reconstruct_sources(
             assumed_backgrounds=assumed_backgrounds,
             assumed_channel_scales=assumed_channel_scales,
             assumed_k=assumed_k,
+            assumed_distance_power=assumed_distance_power,
+            sparsity_lambda=sparsity_lambda,
             search_min=search_min,
             search_max=search_max,
             search_start_distance=search_start_distance,
@@ -150,6 +154,8 @@ def mlem_reconstruction(
     assumed_backgrounds,
     assumed_channel_scales,
     assumed_k,
+    assumed_distance_power,
+    sparsity_lambda,
     search_min,
     search_max,
     search_start_distance,
@@ -190,11 +196,16 @@ def mlem_reconstruction(
         translations=translations,
         assumed_channel_scales=assumed_channel_scales,
         assumed_k=assumed_k,
+        assumed_distance_power=assumed_distance_power,
     )
     
     counts_flat = counts.ravel()
     backgrounds_flat = np.broadcast_to(assumed_backgrounds, counts.shape).ravel()
     
+    sparsity_lambda = float(sparsity_lambda)
+    if sparsity_lambda < 0.0:
+        raise ValueError("sparsity_lambda must be >= 0.")
+
     sensitivity = np.sum(system_matrix, axis=0) # Sensitivity tells us how much each voxel contribute to detector response, not for each measurement, but in total
 
     initial_signal = np.maximum(counts_flat - backgrounds_flat, 0.0)
@@ -213,9 +224,10 @@ def mlem_reconstruction(
             activity=activity,
         )
         ratio = counts_flat / np.maximum(predicted_counts, EPS) # Ratio tells how much error we have in each measurement-channel pair.
-        correction = (system_matrix.T @ ratio) / np.maximum(sensitivity, EPS) # So crucial step. H tells us how much each voxel contribute to measurement-channel pair prediction and ratio tells us how bad prediction was.
+        correction = (system_matrix.T @ ratio) / np.maximum(sensitivity + sparsity_lambda, EPS) # So crucial step. H tells us how much each voxel contribute to measurement-channel pair prediction and ratio tells us how bad prediction was.
                                                                               # H.T @ ratio gives each voxel a response-weighted sum of measurement errors. Dividing by sensitivity normalizes it by total voxel response,
                                                                               # so correction[voxel] becomes the H-weighted average ratio for that voxel, not just a larger sum for better-covered voxels.
+                                                                              # sparsity_lambda adds an L1-like penalty that makes weak diffuse activity shrink faster.
         activity *= correction
 
         if iteration == 1 or iteration % history_interval == 0 or iteration == num_iterations:
