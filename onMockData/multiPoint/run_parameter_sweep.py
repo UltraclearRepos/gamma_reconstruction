@@ -26,12 +26,24 @@ SWEEP_DEFAULTS = {
     "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,  # Channel-to-channel background std per second.
     "CHANNEL_SCALE_MEAN": 1.0,  # Mean multiplicative channel sensitivity used during data generation.
     "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std used during data generation.
-    "GENERATION_K": 4.5,  # >= 0; higher = narrower angular response, so off-axis sources give fewer counts.
-    "GENERATION_DISTANCE_POWER": 1.0,  # Distance falloff exponent used during data generation.
+    "GENERATION_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
+    "GENERATION_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
+    "GENERATION_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
+    "GENERATION_ANGULAR_WIDTH_DEG": 45.0,  # Width of angular acceptance curve [deg]; broad probe 30-80, collimated probe 5-30.
+    "GENERATION_SKIN_THICKNESS_CM": 0.2,  # Skin slab thickness [cm]; typical adult skin: 0.1-0.3, stress-test up to 0.5.
+    "GENERATION_SKIN_MU_PER_CM": 0.15,  # Gamma attenuation coefficient for skin/soft tissue [1/cm]; rough low-energy range: 0.05-0.30.
+    "GENERATION_DETECTOR_INTRINSIC_EFFICIENCY": 1.0,  # Detection probability scale after entering active material; physical range: 0-1.
+    "GENERATION_RESPONSE_SCALE": 1.0,  # Calibration scale from source units to counts; tune over orders of magnitude, e.g. 1-1e5.
     "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Background rate used by reconstruction model.
     "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
-    "ASSUMED_K": 4.5,  # Angular sensitivity exponent used by reconstruction model.
-    "ASSUMED_DISTANCE_POWER": 1.0,  # Distance falloff exponent used by reconstruction model.
+    "ASSUMED_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
+    "ASSUMED_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
+    "ASSUMED_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
+    "ASSUMED_ANGULAR_WIDTH_DEG": 45.0,  # Width of angular acceptance curve [deg]; broad probe 30-80, collimated probe 5-30.
+    "ASSUMED_SKIN_THICKNESS_CM": 0.2,  # Skin thickness assumed by reconstruction [cm]; typical adult skin: 0.1-0.3.
+    "ASSUMED_SKIN_MU_PER_CM": 0.15,  # Skin attenuation coefficient assumed by reconstruction [1/cm]; rough low-energy range: 0.05-0.30.
+    "ASSUMED_DETECTOR_INTRINSIC_EFFICIENCY": 1.0,  # Detection probability scale assumed by reconstruction; physical range: 0-1.
+    "ASSUMED_RESPONSE_SCALE": 1.0,  # Calibration scale assumed by reconstruction; tune to match measured source excess, e.g. 1-1e5.
     "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
     "FIXED_SWEEP_Z_RANGE_DEG": 0.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
     "FIXED_SWEEP_X_RANGE_DEG": 0.0,  # random up/down angle range around world X axis, sampled as +/- this value.
@@ -101,8 +113,8 @@ SWEEP_GROUPS = [
             "BACKGROUND_CHANNEL_STD_PER_SECOND": 0.0,  # Channel-to-channel background std per second.
             "GENERATION_K": 4.5,  # Generated angular response.
             "ASSUMED_K": 4.5,  # Matched angular response used by reconstruction.
-            "GENERATION_DISTANCE_POWER": 1.0,  # Generated distance falloff exponent.
-            "ASSUMED_DISTANCE_POWER": 1.0,  # Matched distance falloff exponent used by reconstruction.
+            "GENERATION_DISTANCE_POWER": 0.0,  # Extra generated distance falloff beyond solid angle.
+            "ASSUMED_DISTANCE_POWER": 0.0,  # Matched extra distance falloff used by reconstruction.
             "CHANNEL_SCALE_MEAN": 1.0,  # Generated global channel sensitivity.
             "ASSUMED_CHANNEL_SCALE": 1.0,  # Matched global channel sensitivity used by reconstruction.
         },
@@ -302,7 +314,7 @@ SWEEP_GROUPS = [
 # All non-swept run_demo settings live here so every run is explicit and every
 # setting can be written to the output CSV.
 FIXED_OVERRIDES = {
-    "reconstruction_method": "mlem",  # Currently available: "mlem".
+    "reconstruction_method": "mlem",  # Available: "mlem".
     "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
     "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
     "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and source strengths [/s].

@@ -81,14 +81,19 @@ def infer_detector_forward_axis(diode_normals_local):
     return np.array([0.0, 0.0, 1.0], dtype=float)
 
 
-def make_detector_geometry(num_channels=16, diode_pitch=0.15875):
+def make_detector_geometry(num_channels=16, diode_pitch=0.15875, channel_height=None):
     """
     Create a linear detector with diodes placed side by side.
 
     diode_pitch is the center-to-center channel pitch in centimeters.
     For adjacent channels without gaps, it is also the channel width.
+    channel_height is the active channel height in centimeters. If it is not
+    provided, channels are modeled as square diode_pitch x diode_pitch pixels.
     All diodes point along the local +Z axis.
     """
+    if channel_height is None:
+        channel_height = diode_pitch
+
     positions = np.zeros((num_channels, 3), dtype=float)
     offsets = np.arange(num_channels, dtype=float) - 0.5 * (num_channels - 1)
     positions[:, 0] = offsets * diode_pitch
@@ -102,7 +107,10 @@ def make_detector_geometry(num_channels=16, diode_pitch=0.15875):
         "detector_forward_local": detector_forward_local,
         "diode_pitch": float(diode_pitch),
         "channel_width": float(diode_pitch),
+        "channel_height": float(channel_height),
+        "channel_area": float(diode_pitch) * float(channel_height),
         "active_length": float(num_channels * diode_pitch),
+        "surface_sample_count": 3,
     }
 
 
@@ -356,7 +364,7 @@ def make_detector_trajectory(
             standoff_distance = base_distance + distance_span * math.sin(
                 2.0 * np.pi * distance_phase + 0.6 * row
             )
-            standoff_distance += 3.0 * rng.normal()
+            standoff_distance += 0.05 * max(abs(float(base_distance)), MIN_TRAJECTORY_DISTANCE) * rng.normal()
             standoff_distance = max(MIN_TRAJECTORY_DISTANCE, standoff_distance)
 
             detector_position = (

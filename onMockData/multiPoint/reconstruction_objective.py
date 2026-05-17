@@ -24,6 +24,12 @@ def build_system_matrix(
     assumed_channel_scales,
     assumed_k,
     assumed_distance_power,
+    assumed_angular_peak_angle_deg=0.0,
+    assumed_angular_width_deg=None,
+    assumed_skin_thickness_cm=0.0,
+    assumed_skin_mu_per_cm=0.0,
+    assumed_detector_intrinsic_efficiency=1.0,
+    assumed_response_scale=1.0,
 ):
     """
     Build H matrix for voxel reconstruction.
@@ -47,6 +53,12 @@ def build_system_matrix(
             channel_scales=assumed_channel_scales,
             k=assumed_k,
             distance_power=assumed_distance_power,
+            angular_peak_angle_deg=assumed_angular_peak_angle_deg,
+            angular_width_deg=assumed_angular_width_deg,
+            skin_thickness_cm=assumed_skin_thickness_cm,
+            skin_mu_per_cm=assumed_skin_mu_per_cm,
+            detector_intrinsic_efficiency=assumed_detector_intrinsic_efficiency,
+            response_scale=assumed_response_scale,
         )
         system_matrix[:, voxel_index] = response.ravel()
 

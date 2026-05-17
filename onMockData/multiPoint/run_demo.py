@@ -11,6 +11,7 @@ ON_MOCK_DATA_DIR = Path(__file__).resolve().parents[1]
 if str(ON_MOCK_DATA_DIR) not in sys.path:
     sys.path.insert(0, str(ON_MOCK_DATA_DIR))
 
+from common.forward_model import compute_detector_response_diagnostics
 from reconstruction_algorithms import pick_activity_peaks, reconstruct_sources
 from metrics import (
     print_activity_localization_summary,
@@ -18,9 +19,13 @@ from metrics import (
     summarize_activity_localization,
     summarize_estimated_source_distances,
 )
-from simulation import generate_synthetic_dataset
+from simulation import expected_counts_multi_source, generate_synthetic_dataset
 from visualization import (
     create_gif_from_frames,
+    visualize_detector_response_curves,
+    visualize_expected_counts_breakdown,
+    visualize_forward_response_components,
+    visualize_forward_signal_summary,
     visualize_history_score,
     visualize_mlem_activity,
     visualize_multi_source_scene,
@@ -31,15 +36,15 @@ def make_default_config():
     """Return default settings for the synthetic multi-point demo."""
     return {
         # Reconstruction method.
-        "reconstruction_method": "mlem",  # Currently available: "mlem".
+        "reconstruction_method": "mlem",  # Available: "mlem".
 
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
-        "NUM_MEASUREMENTS": 30,  # Number of detector positions / generated measurements.
-        "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and source strengths [/s].
-            {"position": (0.0, -5.0, 0.0), "strength_per_second": 5000.0},
-            # {"position": (-10.0, -18.0, 16.0), "strength_per_second": 3250.0},
-            # {"position": (34.0, -7.0, 38.0), "strength_per_second": 2250.0},
+        "NUM_MEASUREMENTS": 42,  # Number of detector positions / generated measurements.
+        "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
+            {"position": (-2.4, -1.7, -1.0), "strength_per_second": 5200.0, "spread_cm": 0.45},  # lateral, moderately shallow node.
+            {"position": (0.7, -2.8, 0.8), "strength_per_second": 4200.0, "spread_cm": 0.65},  # deeper central node.
+            {"position": (2.9, -1.2, 1.7), "strength_per_second": 6100.0, "spread_cm": 0.55},  # cranial/lateral shallow node.
         ],
         "NUM_CHANNELS": 16,  # Number of detector channels.
         "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
@@ -48,48 +53,61 @@ def make_default_config():
         "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,  # Channel-to-channel background std per second.
         "CHANNEL_SCALE_MEAN": 1.0,  # Mean multiplicative channel sensitivity.
         "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std.
-        "GENERATION_K": 4.5,  # >= 0; higher = narrower angular response, so off-axis sources give fewer counts.
-        "GENERATION_DISTANCE_POWER": 1.0,  # Distance falloff exponent: response ~= 1 / distance^power.
+        "GENERATION_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
+        "GENERATION_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
+        "GENERATION_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
+        "GENERATION_ANGULAR_WIDTH_DEG": 45.0,  # Width of angular acceptance curve [deg]; broad probe 30-80, collimated probe 5-30.
+        "GENERATION_SKIN_THICKNESS_CM": 0.2,  # Skin slab thickness [cm]; typical adult skin: 0.1-0.3, stress-test up to 0.5.
+        "GENERATION_SKIN_MU_PER_CM": 0.15,  # Gamma attenuation coefficient for skin/soft tissue [1/cm]; rough low-energy range: 0.05-0.30.
+        "GENERATION_DETECTOR_INTRINSIC_EFFICIENCY": 1.0,  # Detection probability scale after entering active material; physical range: 0-1.
+        "GENERATION_RESPONSE_SCALE": 10000,  # Calibration scale from source units to counts; increase to amplify signal, usually test 1-1e5.
 
         # Assumed reconstruction model.
         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Background rate used by reconstruction model.
         "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
-        "ASSUMED_K": 4.5,  # Angular sensitivity exponent used by reconstruction model.
-        "ASSUMED_DISTANCE_POWER": 1.0,  # Distance falloff exponent used by reconstruction model.
+        "ASSUMED_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
+        "ASSUMED_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
+        "ASSUMED_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
+        "ASSUMED_ANGULAR_WIDTH_DEG": 45.0,  # Width of angular acceptance curve [deg]; broad probe 30-80, collimated probe 5-30.
+        "ASSUMED_SKIN_THICKNESS_CM": 0.2,  # Skin thickness assumed by reconstruction [cm]; typical adult skin: 0.1-0.3.
+        "ASSUMED_SKIN_MU_PER_CM": 0.15,  # Skin attenuation coefficient assumed by reconstruction [1/cm]; rough low-energy range: 0.05-0.30.
+        "ASSUMED_DETECTOR_INTRINSIC_EFFICIENCY": 1.0,  # Detection probability scale assumed by reconstruction; physical range: 0-1.
+        "ASSUMED_RESPONSE_SCALE": 10000,  # Calibration scale assumed by reconstruction; keep near GENERATION scale in matched simulations, usually test 1-1e5.
 
         # Reconstruction volume.
-        "SEARCH_START_DISTANCE": 5.0,  # Start searching this far from each detector channel along detector forward axis [cm].
-        "SEARCH_STOP_DISTANCE": 20.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
-        "SEARCH_START_RADIUS": 3.0,  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
-        "SEARCH_STOP_RADIUS": 12.0,  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
+        "SEARCH_START_DISTANCE": 4.0,  # Start searching this far from each detector channel along detector forward axis [cm].
+        "SEARCH_STOP_DISTANCE": 9.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
+        "SEARCH_START_RADIUS": 1.5,  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
+        "SEARCH_STOP_RADIUS": 5.0,  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
         # The dataset derives the axis-aligned reconstruction box from this detector-distance cone/tube.
-        "GRID_SIZE": 14,  # ML-EM candidate grid size per axis.
+        "GRID_SIZE": 10,  # ML-EM candidate grid size per axis.
 
         # Mock detector trajectory.
-        "TRAJECTORY_MODE": "around_center",  # "grid", "line", or "around_center".
-        "TRAJECTORY_CENTER": (0.0, 0.0, 0.0),  # Reference center of the detector trajectory [cm].
-        "LATERAL_SPAN": 15.0,  # grid/line: max left/right offset from TRAJECTORY_CENTER [cm].
-        "VERTICAL_SPAN": 0.0,  # grid: max up/down offset; line: fixed Z offset from TRAJECTORY_CENTER [cm].
-        "BASE_DISTANCE": 5.0,  # grid/line: nominal detector distance from TRAJECTORY_CENTER [cm].
-        "DISTANCE_SPAN": 0.0,  # grid only: sinusoidal variation of detector distance [cm].
-        "ORBIT_RADIUS": 20.0,  # around_center only: manual nominal orbit radius around TRAJECTORY_CENTER [cm].
-        "ORBIT_RADIUS_SPAN": 0,  # around_center only: sinusoidal radius variation during orbit [cm].
-        "ORBIT_ANGLE_SPAN_DEG": 180.0,  # around_center only: covered arc; 180 = half-turn, 360 = full orbit.
-        "ORBIT_START_ANGLE_DEG": -60.0,  # around_center only: starting angle in the XY plane.
-        "ORBIT_VERTICAL_SPAN": 0.0,  # around_center only: sinusoidal up/down motion during orbit [cm].
+        "TRAJECTORY_MODE": "grid",  # "grid", "line", or "around_center"; here it approximates a raster ultrasound probe sweep over skin.
+        "TRAJECTORY_CENTER": (0.0, -2.0, 0.3),  # Reference center of the detector trajectory [cm].
+        "LATERAL_SPAN": 5.0,  # grid/line: max left/right offset from TRAJECTORY_CENTER [cm].
+        "VERTICAL_SPAN": 3.0,  # grid: max up/down offset; line: fixed Z offset from TRAJECTORY_CENTER [cm].
+        "BASE_DISTANCE": 5.2,  # grid/line: nominal detector distance from TRAJECTORY_CENTER [cm].
+        "DISTANCE_SPAN": 0.2,  # grid only: sinusoidal variation of detector distance [cm].
+        "ORBIT_RADIUS": 6.2,  # around_center only: nominal probe path radius; roughly skin radius + 1 cm detector standoff.
+        "ORBIT_RADIUS_SPAN": 0.4,  # around_center only: small hand-pressure / neck-curvature distance variation [cm].
+        "ORBIT_ANGLE_SPAN_DEG": 125.0,  # around_center only: partial sweep over one side of the neck.
+        "ORBIT_START_ANGLE_DEG": -112.0,  # around_center only: starting angle in the XY plane.
+        "ORBIT_VERTICAL_SPAN": 0.3,  # around_center only: mild cranio-caudal probe motion during the sweep [cm].
 
-        "ORIENTATION_MODE": "towards_target",  # "fixed" or "towards_target"; use "towards_target" to keep looking at TRAJECTORY_CENTER.
+        "ORIENTATION_MODE": "fixed",  # "fixed" or "towards_target"; fixed mimics a probe swept over skin while pointing inward.
         "FIXED_VIEW_DIRECTION": (0, 1, 0),  # fixed mode only: detector forward direction in world coordinates.
         "FIXED_SWEEP_Z_RANGE_DEG": 0.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
         "FIXED_SWEEP_X_RANGE_DEG": 0.0,  # random up/down angle range around world X axis, sampled as +/- this value.
-        "ANGULAR_JITTER_DEG": 0.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
+        "ANGULAR_JITTER_DEG": 1.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
-        "NUM_ITERATIONS": 4000,  # ML-EM iteration count.
-        "HISTORY_INTERVAL": 200,  # How often ML-EM stores history snapshots.
-        "SPARSITY_LAMBDA": 1.0,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
-        "MAX_SOURCES_TO_REPORT": 1,  # Number of strongest separated peaks reported from the activity map.
-        "MIN_SOURCE_DISTANCE": 8.0,  # Minimum separation between reported activity peaks [cm].
+        "NUM_ITERATIONS": 120,  # ML-EM iteration count.
+        "HISTORY_INTERVAL": 60,  # How often ML-EM stores history snapshots.
+        "SPARSITY_LAMBDA": 0.2,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
+        "MAX_SOURCES_TO_REPORT": 3,  # Number of strongest separated peaks reported from the activity map.
+        "MIN_SOURCE_DISTANCE": 1.5,  # Minimum separation between reported activity peaks [cm].
+        "PEAK_CENTROID_RADIUS": 2.5,  # Weighted centroid radius for diffuse activity blobs; 0 reports the peak voxel itself.
 
         # Localization metric.
         "ACTIVITY_MAX_RELATIVE_DROP": 0.5,  # Select voxels with activity >= (1 - drop) * max_activity.
@@ -97,11 +115,11 @@ def make_default_config():
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,  # Print full generated measurement x channel table.
         "UPDATE_FRAME_MAX_VOXELS": 200000,  # Max strongest voxels plotted in one history frame.
-        "GIF_FPS": 5.0,  # GIF frame rate for history animation.
+        "GIF_FPS": 1.0,  # GIF frame rate for history animation.
         "AXIS_LIMITS_3D": (  # 3D plot axis limits [cm].
-            (-30, 30),
-            (-30, 30),
-            (-30, 30),
+            (-10, 10),
+            (-10, 8),
+            (-7, 7),
         ),
     }
 
@@ -117,6 +135,21 @@ def build_config(overrides=None):
         config.update(overrides)
 
     return config
+
+
+def clear_existing_frames(frames_dir, pattern):
+    """Remove stale generated frames before writing a new animation."""
+    frames_dir = Path(frames_dir)
+    if not frames_dir.exists():
+        return
+    for frame_path in frames_dir.glob(pattern):
+        if frame_path.is_file():
+            try:
+                frame_path.unlink()
+            except PermissionError:
+                # The desktop preview can keep old PNGs open on Windows.
+                # Leaving a locked frame in place is better than aborting the run.
+                pass
 
 
 def run_experiment(overrides=None):
@@ -137,6 +170,12 @@ def run_experiment(overrides=None):
         channel_scale_std=config["CHANNEL_SCALE_STD"],
         generation_k=config["GENERATION_K"],
         generation_distance_power=config["GENERATION_DISTANCE_POWER"],
+        generation_angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
+        generation_angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
+        generation_skin_thickness_cm=config["GENERATION_SKIN_THICKNESS_CM"],
+        generation_skin_mu_per_cm=config["GENERATION_SKIN_MU_PER_CM"],
+        generation_detector_intrinsic_efficiency=config["GENERATION_DETECTOR_INTRINSIC_EFFICIENCY"],
+        generation_response_scale=config["GENERATION_RESPONSE_SCALE"],
         measurement_duration_seconds=config["MEASUREMENT_DURATION_SECONDS"],
         trajectory_center=config["TRAJECTORY_CENTER"],
         search_start_distance=config["SEARCH_START_DISTANCE"],
@@ -173,6 +212,12 @@ def run_experiment(overrides=None):
         ),
         "assumed_k": config["ASSUMED_K"],
         "assumed_distance_power": config["ASSUMED_DISTANCE_POWER"],
+        "assumed_angular_peak_angle_deg": config["ASSUMED_ANGULAR_PEAK_DEG"],
+        "assumed_angular_width_deg": config["ASSUMED_ANGULAR_WIDTH_DEG"],
+        "assumed_skin_thickness_cm": config["ASSUMED_SKIN_THICKNESS_CM"],
+        "assumed_skin_mu_per_cm": config["ASSUMED_SKIN_MU_PER_CM"],
+        "assumed_detector_intrinsic_efficiency": config["ASSUMED_DETECTOR_INTRINSIC_EFFICIENCY"],
+        "assumed_response_scale": config["ASSUMED_RESPONSE_SCALE"],
     }
 
     result = reconstruct_sources(
@@ -194,6 +239,7 @@ def run_experiment(overrides=None):
         sparsity_lambda=config["SPARSITY_LAMBDA"],
         max_sources=config["MAX_SOURCES_TO_REPORT"],
         min_source_distance=config["MIN_SOURCE_DISTANCE"],
+        peak_centroid_radius=config["PEAK_CENTROID_RADIUS"],
     )
 
     localization_metrics = summarize_activity_localization(
@@ -227,6 +273,7 @@ def print_summary(dataset):
         print(
             " "
             f"S{index}: position={np.round(source['position'], 4)}, "
+            f"spread_cm={source.get('spread_cm', 0.0):.2f}, "
             f"strength_per_second={source['strength_per_second']:.2f}, "
             f"strength_per_sample={source['strength']:.2f}"
         )
@@ -240,6 +287,30 @@ def print_summary(dataset):
         "Measurement mean min/max:   "
         f"{counts.mean(axis=1).min():.1f} / {counts.mean(axis=1).max():.1f}"
     )
+    if "mean_counts" in dataset:
+        expected_source_signal = (
+            np.asarray(dataset["mean_counts"], dtype=float)
+            - np.asarray(dataset["true_backgrounds"], dtype=float)[np.newaxis, :]
+        )
+        background_mean = max(float(dataset["background_mean"]), 1e-12)
+        background_std = max(float(dataset["background_channel_std"]), 1e-12)
+        print(
+            "Expected source signal:    "
+            f"{expected_source_signal.min():.4f} / "
+            f"{expected_source_signal.mean():.4f} / "
+            f"{expected_source_signal.max():.4f} "
+            "(min/mean/max counts)"
+        )
+        print(
+            "Signal/background ratio:   "
+            f"mean={expected_source_signal.mean() / background_mean:.6f}, "
+            f"max={expected_source_signal.max() / background_mean:.6f}"
+        )
+        print(
+            "Signal/channel-std ratio:  "
+            f"mean={expected_source_signal.mean() / background_std:.6f}, "
+            f"max={expected_source_signal.max() / background_std:.6f}"
+        )
     print(f"Measurement duration [s]:   {dataset['measurement_duration_seconds']:.2f}")
     print(f"Background mean [/s]:       {dataset['background_mean_per_second']:.1f}")
     print(f"Background mean / sample:   {dataset['background_mean']:.1f}")
@@ -353,7 +424,9 @@ def main():
     print_estimated_source_distance_summary(experiment["estimated_distance_summary"])
 
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
+    forward_model_dir = output_dir / "forward_model"
     history_3d_dir = output_dir / "mlem_activity_history_3d"
+    forward_model_dir.mkdir(parents=True, exist_ok=True)
     history_3d_dir.mkdir(parents=True, exist_ok=True)
     max_activity_for_visualization = max(
         float(np.max(activity_snapshot))
@@ -366,6 +439,71 @@ def main():
         save_path=output_dir / "multi_source_scene.png",
         show=False,
         axis_limits=config["AXIS_LIMITS_3D"],
+    )
+    visualize_detector_response_curves(
+        k=config["GENERATION_K"],
+        angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
+        angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
+        skin_thickness_cm=config["GENERATION_SKIN_THICKNESS_CM"],
+        skin_mu_per_cm=config["GENERATION_SKIN_MU_PER_CM"],
+        save_path=forward_model_dir / "detector_response_curves.png",
+        show=False,
+    )
+    visualize_expected_counts_breakdown(
+        dataset,
+        save_path=forward_model_dir / "expected_counts_breakdown.png",
+        show=False,
+    )
+
+    source_signal_maps = []
+    source_labels = []
+    for source_index, source in enumerate(dataset["true_sources"], start=1):
+        diagnostics = compute_detector_response_diagnostics(
+            source_position=source["position"],
+            geometry=dataset["geometry"],
+            rotations=dataset["rotations"],
+            translations=dataset["translations"],
+            channel_scales=dataset["true_channel_scales"],
+            k=config["GENERATION_K"],
+            distance_power=config["GENERATION_DISTANCE_POWER"],
+            angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
+            angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
+            skin_thickness_cm=config["GENERATION_SKIN_THICKNESS_CM"],
+            skin_mu_per_cm=config["GENERATION_SKIN_MU_PER_CM"],
+            detector_intrinsic_efficiency=config["GENERATION_DETECTOR_INTRINSIC_EFFICIENCY"],
+            response_scale=config["GENERATION_RESPONSE_SCALE"],
+        )
+        source_label = f"S{source_index}"
+        source_signal = expected_counts_multi_source(
+            sources=[source],
+            geometry=dataset["geometry"],
+            rotations=dataset["rotations"],
+            translations=dataset["translations"],
+            channel_scales=dataset["true_channel_scales"],
+            backgrounds=np.zeros_like(dataset["true_backgrounds"]),
+            k=config["GENERATION_K"],
+            distance_power=config["GENERATION_DISTANCE_POWER"],
+            angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
+            angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
+            skin_thickness_cm=config["GENERATION_SKIN_THICKNESS_CM"],
+            skin_mu_per_cm=config["GENERATION_SKIN_MU_PER_CM"],
+            detector_intrinsic_efficiency=config["GENERATION_DETECTOR_INTRINSIC_EFFICIENCY"],
+            response_scale=config["GENERATION_RESPONSE_SCALE"],
+        )
+        source_signal_maps.append(source_signal)
+        source_labels.append(source_label)
+        visualize_forward_response_components(
+            diagnostics=diagnostics,
+            source_label=source_label,
+            save_path=forward_model_dir / f"response_components_{source_label}.png",
+            show=False,
+        )
+
+    visualize_forward_signal_summary(
+        source_signal_maps=source_signal_maps,
+        source_labels=source_labels,
+        save_path=forward_model_dir / "source_signal_summary.png",
+        show=False,
     )
     visualize_mlem_activity(
         dataset,
@@ -387,17 +525,21 @@ def main():
     )
 
     num_history_frames = len(result["history"])
+    clear_existing_frames(history_3d_dir, "iteration_*.png")
     for frame_index, (activity_snapshot, history_item) in enumerate(
         zip(result["activity_history"], result["history"]),
         start=1,
     ):
+        iteration = int(history_item["iteration"])
         estimated_sources_step = pick_activity_peaks(
             candidate_positions=result["candidate_positions"],
             activity=activity_snapshot,
             max_sources=config["MAX_SOURCES_TO_REPORT"],
             min_distance=config["MIN_SOURCE_DISTANCE"],
+            centroid_radius=config["PEAK_CENTROID_RADIUS"],
         )
-        iteration = int(history_item["iteration"])
+        frame_label = f"frame {frame_index}/{num_history_frames} | iteration {iteration}"
+
         visualize_mlem_activity(
             dataset,
             candidate_positions=result["candidate_positions"],
@@ -409,7 +551,7 @@ def main():
             axis_limits=config["AXIS_LIMITS_3D"],
             activity_color_limits=ACTIVITY_COLOR_LIMITS,
             activity_size_reference=max_activity_for_visualization,
-            frame_label=f"frame {frame_index}/{num_history_frames} | iteration {iteration}",
+            frame_label=frame_label,
             highlight_used_trajectory=False,
         )
 
@@ -423,6 +565,10 @@ def main():
     print()
     print("Saved plots:")
     print(" ", output_dir / "multi_source_scene.png")
+    print(" ", forward_model_dir / "detector_response_curves.png")
+    print(" ", forward_model_dir / "expected_counts_breakdown.png")
+    print(" ", forward_model_dir / "response_components_S1.png ...")
+    print(" ", forward_model_dir / "source_signal_summary.png")
     print(" ", output_dir / "mlem_activity_reconstruction.png")
     print(" ", output_dir / "mlem_score_history.png")
     print(" ", history_3d_dir / "iteration_000001.png ...")

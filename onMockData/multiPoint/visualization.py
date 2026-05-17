@@ -8,6 +8,7 @@ import numpy as np
 
 from common.geometry import EPS
 from common.visualization import finalize_figure, set_3d_axis_limits, set_equal_3d_axes
+from common.detector_response_components import angular_response, skin_attenuation
 
 
 def plot_detector_forward_directions(
@@ -351,6 +352,237 @@ def visualize_history_score(history, save_path=None, show=False):
     finalize_figure(fig, save_path=save_path, show=show)
 
 
+def _add_heatmap(fig, ax, values, title, colorbar_label, cmap="viridis", log_scale=False):
+    values = np.asarray(values, dtype=float)
+    plot_values = np.log10(np.maximum(values, EPS)) if log_scale else values
+    image = ax.imshow(plot_values, aspect="auto", origin="lower", cmap=cmap)
+    ax.set_title(title)
+    ax.set_xlabel("channel")
+    ax.set_ylabel("measurement")
+    colorbar = fig.colorbar(image, ax=ax, shrink=0.82)
+    colorbar.set_label(colorbar_label)
+
+
+def visualize_forward_response_components(
+    diagnostics,
+    source_label,
+    save_path=None,
+    show=False,
+):
+    """Show detector-response component maps before reconstruction."""
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(2, 4, figsize=(17, 8), constrained_layout=True)
+    axes = axes.ravel()
+
+    _add_heatmap(
+        fig,
+        axes[0],
+        diagnostics["response"],
+        "final response",
+        "log10(response)",
+        cmap="magma",
+        log_scale=True,
+    )
+    _add_heatmap(
+        fig,
+        axes[1],
+        diagnostics["solid_angle"],
+        "solid angle fraction",
+        "log10(fraction)",
+        cmap="viridis",
+        log_scale=True,
+    )
+    _add_heatmap(
+        fig,
+        axes[2],
+        diagnostics["theta_deg"],
+        "effective incidence angle",
+        "degrees",
+        cmap="cividis",
+    )
+    _add_heatmap(
+        fig,
+        axes[3],
+        diagnostics["distance_cm"],
+        "effective distance",
+        "cm",
+        cmap="plasma",
+    )
+    _add_heatmap(
+        fig,
+        axes[4],
+        diagnostics["angular_response"],
+        "angular response",
+        "gain",
+        cmap="viridis",
+    )
+    _add_heatmap(
+        fig,
+        axes[5],
+        diagnostics["skin_attenuation"],
+        "skin attenuation",
+        "transmission",
+        cmap="viridis",
+    )
+    _add_heatmap(
+        fig,
+        axes[6],
+        diagnostics["distance_factor"],
+        "extra distance factor",
+        "factor",
+        cmap="viridis",
+    )
+    _add_heatmap(
+        fig,
+        axes[7],
+        diagnostics["cos_theta"],
+        "cos(theta)",
+        "cos",
+        cmap="cividis",
+    )
+
+    fig.suptitle(f"Forward model response components - {source_label}")
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def visualize_forward_signal_summary(source_signal_maps, source_labels, save_path=None, show=False):
+    """Plot per-source predicted signal before reconstruction."""
+    import matplotlib.pyplot as plt
+
+    if not source_signal_maps:
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.8), constrained_layout=True)
+    measurement_axis = np.arange(1, source_signal_maps[0].shape[0] + 1)
+    channel_axis = np.arange(1, source_signal_maps[0].shape[1] + 1)
+
+    for signal_map, label in zip(source_signal_maps, source_labels):
+        axes[0].plot(
+            measurement_axis,
+            np.sum(signal_map, axis=1),
+            marker="o",
+            linewidth=1.6,
+            label=label,
+        )
+        axes[1].plot(
+            channel_axis,
+            np.mean(signal_map, axis=0),
+            marker="o",
+            linewidth=1.6,
+            label=label,
+        )
+
+    axes[0].set_title("predicted source signal by measurement")
+    axes[0].set_xlabel("measurement")
+    axes[0].set_ylabel("sum over channels [counts]")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend(loc="best")
+
+    axes[1].set_title("mean predicted source signal by channel")
+    axes[1].set_xlabel("channel")
+    axes[1].set_ylabel("mean over measurements [counts]")
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend(loc="best")
+
+    fig.suptitle("Forward model predicted source signal")
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def visualize_expected_counts_breakdown(dataset, save_path=None, show=False):
+    """Compare generated counts, noiseless expected counts, and source signal."""
+    import matplotlib.pyplot as plt
+
+    counts = np.asarray(dataset["counts"], dtype=float)
+    mean_counts = np.asarray(dataset["mean_counts"], dtype=float)
+    backgrounds = np.asarray(dataset["true_backgrounds"], dtype=float)
+    source_signal = mean_counts - backgrounds[np.newaxis, :]
+    residual = counts - mean_counts
+
+    fig, axes = plt.subplots(2, 3, figsize=(16, 8), constrained_layout=True)
+    axes = axes.ravel()
+
+    _add_heatmap(fig, axes[0], counts, "sampled counts", "counts", cmap="magma")
+    _add_heatmap(fig, axes[1], mean_counts, "expected counts", "counts", cmap="magma")
+    _add_heatmap(fig, axes[2], source_signal, "expected source signal", "counts", cmap="inferno")
+    _add_heatmap(fig, axes[3], residual, "sampled - expected", "counts", cmap="coolwarm")
+
+    measurement_axis = np.arange(1, counts.shape[0] + 1)
+    axes[4].plot(measurement_axis, np.mean(counts, axis=1), label="sampled", linewidth=1.7)
+    axes[4].plot(measurement_axis, np.mean(mean_counts, axis=1), label="expected", linewidth=1.7)
+    axes[4].plot(measurement_axis, np.mean(source_signal, axis=1), label="source signal", linewidth=1.7)
+    axes[4].set_title("mean by measurement")
+    axes[4].set_xlabel("measurement")
+    axes[4].set_ylabel("mean counts/channel")
+    axes[4].grid(True, alpha=0.3)
+    axes[4].legend(loc="best")
+
+    channel_axis = np.arange(1, counts.shape[1] + 1)
+    axes[5].plot(channel_axis, np.mean(counts, axis=0), label="sampled", linewidth=1.7)
+    axes[5].plot(channel_axis, np.mean(mean_counts, axis=0), label="expected", linewidth=1.7)
+    axes[5].plot(channel_axis, np.mean(source_signal, axis=0), label="source signal", linewidth=1.7)
+    axes[5].set_title("mean by channel")
+    axes[5].set_xlabel("channel")
+    axes[5].set_ylabel("mean counts/measurement")
+    axes[5].grid(True, alpha=0.3)
+    axes[5].legend(loc="best")
+
+    fig.suptitle("Counts before reconstruction")
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def visualize_detector_response_curves(
+    k,
+    angular_peak_angle_deg,
+    angular_width_deg,
+    skin_thickness_cm,
+    skin_mu_per_cm,
+    save_path=None,
+    show=False,
+):
+    """Show angular response and skin attenuation curves used by the model."""
+    import matplotlib.pyplot as plt
+
+    theta_values = np.linspace(0.0, 89.0, 300)
+    cos_values = np.cos(np.deg2rad(theta_values))
+    angular_values = np.array(
+        [
+            angular_response(
+                cos_theta=cos_theta,
+                k=k,
+                angular_peak_angle_deg=angular_peak_angle_deg,
+                angular_width_deg=angular_width_deg,
+            )
+            for cos_theta in cos_values
+        ],
+        dtype=float,
+    )
+    skin_values = np.array(
+        [
+            skin_attenuation(
+                cos_theta=cos_theta,
+                skin_thickness_cm=skin_thickness_cm,
+                skin_mu_per_cm=skin_mu_per_cm,
+            )
+            for cos_theta in cos_values
+        ],
+        dtype=float,
+    )
+
+    fig, ax = plt.subplots(figsize=(8, 4.8))
+    ax.plot(theta_values, angular_values, linewidth=2.0, label="angular response")
+    ax.plot(theta_values, skin_values, linewidth=2.0, label="skin attenuation")
+    ax.plot(theta_values, angular_values * skin_values, linewidth=2.0, label="product")
+    ax.set_title("Detector response curves")
+    ax.set_xlabel("incidence angle [deg]")
+    ax.set_ylabel("factor")
+    ax.set_ylim(bottom=0.0)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
 def visualize_streaming_best_position(history, dataset, save_path=None, show=False):
     """Plot best estimated source position after each streaming update."""
     import matplotlib.pyplot as plt
@@ -499,8 +731,15 @@ def create_gif_from_frames(
 
     images = []
     for path in frame_paths:
-        with Image.open(path) as frame:
-            images.append(frame.convert("RGB"))
+        try:
+            with Image.open(path) as frame:
+                images.append(frame.convert("RGB"))
+        except FileNotFoundError:
+            # A previous Windows preview/cleanup race can leave a stale glob result.
+            continue
+
+    if not images:
+        raise ValueError(f"No readable frames matching '{pattern}' in {frames_dir}.")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     images[0].save(

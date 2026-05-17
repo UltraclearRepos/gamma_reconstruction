@@ -28,12 +28,19 @@ def reconstruct_sources(
     search_stop_distance,
     search_start_radius,
     search_stop_radius,
+    assumed_angular_peak_angle_deg=0.0,
+    assumed_angular_width_deg=None,
+    assumed_skin_thickness_cm=0.0,
+    assumed_skin_mu_per_cm=0.0,
+    assumed_detector_intrinsic_efficiency=1.0,
+    assumed_response_scale=1.0,
     method="mlem",
     grid_size=11,
     num_iterations=40,
     history_interval=5,
     max_sources=3,
     min_source_distance=8.0,
+    peak_centroid_radius=0.0,
 ):
     """
     Run one multi-source reconstruction method using a plain if/elif dispatcher.
@@ -50,6 +57,12 @@ def reconstruct_sources(
             assumed_channel_scales=assumed_channel_scales,
             assumed_k=assumed_k,
             assumed_distance_power=assumed_distance_power,
+            assumed_angular_peak_angle_deg=assumed_angular_peak_angle_deg,
+            assumed_angular_width_deg=assumed_angular_width_deg,
+            assumed_skin_thickness_cm=assumed_skin_thickness_cm,
+            assumed_skin_mu_per_cm=assumed_skin_mu_per_cm,
+            assumed_detector_intrinsic_efficiency=assumed_detector_intrinsic_efficiency,
+            assumed_response_scale=assumed_response_scale,
             sparsity_lambda=sparsity_lambda,
             search_min=search_min,
             search_max=search_max,
@@ -62,9 +75,13 @@ def reconstruct_sources(
             history_interval=history_interval,
             max_sources=max_sources,
             min_source_distance=min_source_distance,
+            peak_centroid_radius=peak_centroid_radius,
         )
 
-    raise ValueError(f"Unknown multi-source reconstruction method '{method}'. Use: mlem.")
+    raise ValueError(
+        f"Unknown multi-source reconstruction method '{method}'. "
+        "Use: mlem."
+    )
 
 
 def make_candidate_grid(
@@ -110,7 +127,13 @@ def make_candidate_grid(
     return candidate_positions
 
 
-def pick_activity_peaks(candidate_positions, activity, max_sources=3, min_distance=8.0):
+def pick_activity_peaks(
+    candidate_positions,
+    activity,
+    max_sources=3,
+    min_distance=8.0,
+    centroid_radius=0.0,
+):
     """
     Pick strongest separated activity peaks from a voxel activity map.
 
@@ -118,12 +141,29 @@ def pick_activity_peaks(candidate_positions, activity, max_sources=3, min_distan
     """
     estimated_sources = []
     sorted_indices = np.argsort(activity)[::-1]
+    centroid_radius = float(centroid_radius)
+    if centroid_radius < 0.0:
+        raise ValueError("centroid_radius must be >= 0.")
 
     for voxel_index in sorted_indices:
         if activity[voxel_index] <= 0.0:
             break
 
-        position = candidate_positions[voxel_index]
+        peak_position = candidate_positions[voxel_index]
+        position = peak_position
+        source_activity = float(activity[voxel_index])
+        if centroid_radius > 0.0:
+            distances_to_peak = np.linalg.norm(candidate_positions - peak_position, axis=1)
+            local_mask = (distances_to_peak <= centroid_radius) & (activity > 0.0)
+            local_activity = activity[local_mask]
+            if len(local_activity) > 0 and np.sum(local_activity) > EPS:
+                position = np.average(
+                    candidate_positions[local_mask],
+                    axis=0,
+                    weights=local_activity,
+                )
+                source_activity = float(np.sum(local_activity))
+
         far_enough = True
         for source in estimated_sources:
             distance = np.linalg.norm(position - source["position"])
@@ -135,8 +175,9 @@ def pick_activity_peaks(candidate_positions, activity, max_sources=3, min_distan
             estimated_sources.append(
                 {
                     "position": position.copy(),
-                    "activity": float(activity[voxel_index]),
+                    "activity": source_activity,
                     "voxel_index": int(voxel_index),
+                    "peak_position": peak_position.copy(),
                 }
             )
 
@@ -162,11 +203,18 @@ def mlem_reconstruction(
     search_stop_distance,
     search_start_radius,
     search_stop_radius,
+    assumed_angular_peak_angle_deg=0.0,
+    assumed_angular_width_deg=None,
+    assumed_skin_thickness_cm=0.0,
+    assumed_skin_mu_per_cm=0.0,
+    assumed_detector_intrinsic_efficiency=1.0,
+    assumed_response_scale=1.0,
     grid_size=11,
     num_iterations=40,
     history_interval=5,
     max_sources=3,
     min_source_distance=8.0,
+    peak_centroid_radius=0.0,
 ):
     """
     Reconstruct a voxel activity map with ML-EM.
@@ -197,6 +245,12 @@ def mlem_reconstruction(
         assumed_channel_scales=assumed_channel_scales,
         assumed_k=assumed_k,
         assumed_distance_power=assumed_distance_power,
+        assumed_angular_peak_angle_deg=assumed_angular_peak_angle_deg,
+        assumed_angular_width_deg=assumed_angular_width_deg,
+        assumed_skin_thickness_cm=assumed_skin_thickness_cm,
+        assumed_skin_mu_per_cm=assumed_skin_mu_per_cm,
+        assumed_detector_intrinsic_efficiency=assumed_detector_intrinsic_efficiency,
+        assumed_response_scale=assumed_response_scale,
     )
     
     counts_flat = counts.ravel()
@@ -253,6 +307,7 @@ def mlem_reconstruction(
         activity=activity,
         max_sources=max_sources,
         min_distance=min_source_distance,
+        centroid_radius=peak_centroid_radius,
     )
 
     return {

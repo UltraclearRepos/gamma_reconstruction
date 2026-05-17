@@ -7,9 +7,50 @@ import numpy as np
 from common.forward_model import compute_detector_response
 from common.geometry import (
     derive_search_volume_from_detector_window,
+    EPS,
     make_detector_geometry,
     make_detector_trajectory,
 )
+
+
+def gaussian_source_components(position, strength, spread_cm):
+    """
+    Approximate a compact 3D Gaussian source by deterministic sub-sources.
+
+    The returned components preserve total strength and approximate the requested
+    standard deviation along each axis. spread_cm == 0 keeps a point source.
+    """
+    position = np.asarray(position, dtype=float)
+    strength = float(strength)
+    spread_cm = float(spread_cm)
+    if spread_cm <= EPS:
+        return [
+            {
+                "position": position.copy(),
+                "strength": strength,
+                "weight": 1.0,
+            }
+        ]
+
+    radius = np.sqrt(6.0) * spread_cm
+    offsets = [
+        np.array([0.0, 0.0, 0.0], dtype=float),
+        np.array([radius, 0.0, 0.0], dtype=float),
+        np.array([-radius, 0.0, 0.0], dtype=float),
+        np.array([0.0, radius, 0.0], dtype=float),
+        np.array([0.0, -radius, 0.0], dtype=float),
+        np.array([0.0, 0.0, radius], dtype=float),
+        np.array([0.0, 0.0, -radius], dtype=float),
+    ]
+    weights = [0.5, *(6 * [1.0 / 12.0])]
+    return [
+        {
+            "position": position + offset,
+            "strength": strength * weight,
+            "weight": weight,
+        }
+        for offset, weight in zip(offsets, weights)
+    ]
 
 
 def expected_counts_multi_source(
@@ -21,21 +62,42 @@ def expected_counts_multi_source(
     backgrounds,
     k,
     distance_power,
+    angular_peak_angle_deg=0.0,
+    angular_width_deg=None,
+    skin_thickness_cm=0.0,
+    skin_mu_per_cm=0.0,
+    detector_intrinsic_efficiency=1.0,
+    response_scale=1.0,
 ):
-    """Forward model for several point sources."""
+    """Forward model for several possibly extended sources."""
     mean_counts = np.broadcast_to(backgrounds, (len(translations), len(backgrounds))).copy()
 
     for source in sources:
-        response = compute_detector_response(
-            source_position=source["position"],
-            geometry=geometry,
-            rotations=rotations,
-            translations=translations,
-            channel_scales=channel_scales,
-            k=k,
-            distance_power=distance_power,
-        )
-        mean_counts += source["strength"] * response
+        components = source.get("components")
+        if components is None:
+            components = gaussian_source_components(
+                position=source["position"],
+                strength=source["strength"],
+                spread_cm=source.get("spread_cm", 0.0),
+            )
+
+        for component in components:
+            response = compute_detector_response(
+                source_position=component["position"],
+                geometry=geometry,
+                rotations=rotations,
+                translations=translations,
+                channel_scales=channel_scales,
+                k=k,
+                distance_power=distance_power,
+                angular_peak_angle_deg=angular_peak_angle_deg,
+                angular_width_deg=angular_width_deg,
+                skin_thickness_cm=skin_thickness_cm,
+                skin_mu_per_cm=skin_mu_per_cm,
+                detector_intrinsic_efficiency=detector_intrinsic_efficiency,
+                response_scale=response_scale,
+            )
+            mean_counts += component["strength"] * response
 
     return mean_counts
 
@@ -73,6 +135,12 @@ def generate_synthetic_dataset(
     orbit_vertical_span,
     fixed_sweep_z_range_deg,
     fixed_sweep_x_range_deg,
+    generation_angular_peak_angle_deg=0.0,
+    generation_angular_width_deg=None,
+    generation_skin_thickness_cm=0.0,
+    generation_skin_mu_per_cm=0.0,
+    generation_detector_intrinsic_efficiency=1.0,
+    generation_response_scale=1.0,
 ):
     """
     Generate one synthetic multi-source experiment.
@@ -119,11 +187,22 @@ def generate_synthetic_dataset(
         strength_per_second = float(source["strength_per_second"])
         if strength_per_second < 0.0:
             raise ValueError("source strength_per_second must be >= 0.")
+        spread_cm = float(source.get("spread_cm", 0.0))
+        if spread_cm < 0.0:
+            raise ValueError("source spread_cm must be >= 0.")
+        strength = strength_per_second * measurement_duration_seconds
+        components = gaussian_source_components(
+            position=source["position"],
+            strength=strength,
+            spread_cm=spread_cm,
+        )
         true_sources.append(
             {
                 "position": np.array(source["position"], dtype=float),
                 "strength_per_second": strength_per_second,
-                "strength": strength_per_second * measurement_duration_seconds,
+                "strength": strength,
+                "spread_cm": spread_cm,
+                "components": components,
             }
         )
     if trajectory_center is None:
@@ -184,12 +263,19 @@ def generate_synthetic_dataset(
         backgrounds=true_backgrounds,
         k=generation_k,
         distance_power=generation_distance_power,
+        angular_peak_angle_deg=generation_angular_peak_angle_deg,
+        angular_width_deg=generation_angular_width_deg,
+        skin_thickness_cm=generation_skin_thickness_cm,
+        skin_mu_per_cm=generation_skin_mu_per_cm,
+        detector_intrinsic_efficiency=generation_detector_intrinsic_efficiency,
+        response_scale=generation_response_scale,
     )
 
     noisy_counts = rng.poisson(mean_counts).astype(float)
 
     return {
         "counts": noisy_counts,
+        "mean_counts": mean_counts,
         "rotations": rotations,
         "translations": translations,
         "geometry": geometry,
@@ -206,6 +292,12 @@ def generate_synthetic_dataset(
         "true_channel_scales": true_channel_scales,
         "generation_k": generation_k,
         "generation_distance_power": generation_distance_power,
+        "generation_angular_peak_angle_deg": generation_angular_peak_angle_deg,
+        "generation_angular_width_deg": generation_angular_width_deg,
+        "generation_skin_thickness_cm": generation_skin_thickness_cm,
+        "generation_skin_mu_per_cm": generation_skin_mu_per_cm,
+        "generation_detector_intrinsic_efficiency": generation_detector_intrinsic_efficiency,
+        "generation_response_scale": generation_response_scale,
         "measurement_duration_seconds": measurement_duration_seconds,
         "background_mean_per_second": background_mean_per_second,
         "background_mean": background_mean,
