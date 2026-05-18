@@ -29,7 +29,10 @@ SWEEP_DEFAULTS = {
     "GENERATION_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
     "GENERATION_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
     "GENERATION_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
-    "GENERATION_ANGULAR_WIDTH_DEG": 45.0,  # Width of angular acceptance curve [deg]; broad probe 30-80, collimated probe 5-30.
+    "GENERATION_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
+    "GENERATION_COLLIMATOR_HALF_ANGLE_DEG": 18.0,  # Collimator cone half-angle [deg]; narrow probe 8-20, broad/weak collimation 20-35.
+    "GENERATION_COLLIMATOR_EDGE_WIDTH_DEG": 3.0,  # Softness of collimator cutoff [deg]; sharp lead collimator 1-4, soft/uncertain 4-8.
+    "GENERATION_COLLIMATOR_LEAKAGE": 0.002,  # Side-response floor from imperfect shielding/scatter; ideal 0, realistic test 0.001-0.02.
     "GENERATION_SKIN_THICKNESS_CM": 0.2,  # Skin slab thickness [cm]; typical adult skin: 0.1-0.3, stress-test up to 0.5.
     "GENERATION_SKIN_MU_PER_CM": 0.15,  # Gamma attenuation coefficient for skin/soft tissue [1/cm]; rough low-energy range: 0.05-0.30.
     "GENERATION_DETECTOR_INTRINSIC_EFFICIENCY": 1.0,  # Detection probability scale after entering active material; physical range: 0-1.
@@ -39,7 +42,10 @@ SWEEP_DEFAULTS = {
     "ASSUMED_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
     "ASSUMED_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
     "ASSUMED_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
-    "ASSUMED_ANGULAR_WIDTH_DEG": 45.0,  # Width of angular acceptance curve [deg]; broad probe 30-80, collimated probe 5-30.
+    "ASSUMED_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
+    "ASSUMED_COLLIMATOR_HALF_ANGLE_DEG": 18.0,  # Collimator cone half-angle assumed by reconstruction [deg]; try 10-25.
+    "ASSUMED_COLLIMATOR_EDGE_WIDTH_DEG": 3.0,  # Assumed cutoff softness [deg]; smaller = stronger angular rejection.
+    "ASSUMED_COLLIMATOR_LEAKAGE": 0.002,  # Assumed side-response floor; increase only if measured side lobes are visible.
     "ASSUMED_SKIN_THICKNESS_CM": 0.2,  # Skin thickness assumed by reconstruction [cm]; typical adult skin: 0.1-0.3.
     "ASSUMED_SKIN_MU_PER_CM": 0.15,  # Skin attenuation coefficient assumed by reconstruction [1/cm]; rough low-energy range: 0.05-0.30.
     "ASSUMED_DETECTOR_INTRINSIC_EFFICIENCY": 1.0,  # Detection probability scale assumed by reconstruction; physical range: 0-1.
@@ -326,7 +332,7 @@ FIXED_OVERRIDES = {
     "SEARCH_STOP_DISTANCE": 140.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
     "SEARCH_WIDTH": 60.0,  # Full width of the detector-relative rectangular search box [cm].
     "SEARCH_HEIGHT": 36.0,  # Full height of the detector-relative rectangular search box [cm].
-    "GRID_SIZE": 13,  # ML-EM candidate grid size per axis.
+    "VOXEL_SIZE_CM": 8.0,  # Reconstruction voxel spacing [cm]; smaller = denser 3D activity grid.
     "TRAJECTORY_MODE": "grid",  # "grid" or "around_center".
     "LATERAL_SPAN": 60.0,  # grid only: max left/right position offset from TRAJECTORY_CENTER [cm].
     "VERTICAL_SPAN": 36.0,  # grid only: max up/down position offset from TRAJECTORY_CENTER [cm].

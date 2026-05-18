@@ -3,8 +3,9 @@ Synthetic data generation for multi-point source reconstruction experiments.
 """
 
 import numpy as np
+import torch
 
-from common.forward_model import compute_detector_response
+from common.forward_model import compute_detector_response_torch
 from common.geometry import (
     derive_search_volume_from_detector_box,
     EPS,
@@ -94,13 +95,19 @@ def expected_counts_multi_source(
     distance_power,
     angular_peak_angle_deg=0.0,
     angular_width_deg=None,
+    collimator_half_angle_deg=None,
+    collimator_edge_width_deg=3.0,
+    collimator_leakage=0.0,
     skin_thickness_cm=0.0,
     skin_mu_per_cm=0.0,
     detector_intrinsic_efficiency=1.0,
     response_scale=1.0,
 ):
-    """Forward model for several possibly extended sources."""
+    """Forward model for several possibly extended sources, evaluated on GPU."""
     mean_counts = np.broadcast_to(backgrounds, (len(translations), len(backgrounds))).copy()
+
+    all_positions = []
+    all_strengths = []
 
     for source in sources:
         components = source.get("components")
@@ -112,22 +119,47 @@ def expected_counts_multi_source(
             )
 
         for component in components:
-            response = compute_detector_response(
-                source_position=component["position"],
-                geometry=geometry,
-                rotations=rotations,
-                translations=translations,
-                channel_scales=channel_scales,
-                k=k,
-                distance_power=distance_power,
-                angular_peak_angle_deg=angular_peak_angle_deg,
-                angular_width_deg=angular_width_deg,
-                skin_thickness_cm=skin_thickness_cm,
-                skin_mu_per_cm=skin_mu_per_cm,
-                detector_intrinsic_efficiency=detector_intrinsic_efficiency,
-                response_scale=response_scale,
-            )
-            mean_counts += component["strength"] * response
+            all_positions.append(component["position"])
+            all_strengths.append(component["strength"])
+
+    if not all_positions:
+        return mean_counts
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    all_positions = np.array(all_positions, dtype=float)
+    all_strengths_tensor = torch.as_tensor(all_strengths, dtype=torch.float32, device=device)
+
+    chunk_size = 4096
+    num_components = len(all_positions)
+
+    for start in range(0, num_components, chunk_size):
+        stop = min(start + chunk_size, num_components)
+        pos_chunk = all_positions[start:stop]
+        strengths_chunk = all_strengths_tensor[start:stop]
+
+        response_chunk = compute_detector_response_torch(
+            source_position=pos_chunk,
+            geometry=geometry,
+            rotations=rotations,
+            translations=translations,
+            channel_scales=channel_scales,
+            k=k,
+            distance_power=distance_power,
+            angular_peak_angle_deg=angular_peak_angle_deg,
+            angular_width_deg=angular_width_deg,
+            collimator_half_angle_deg=collimator_half_angle_deg,
+            collimator_edge_width_deg=collimator_edge_width_deg,
+            collimator_leakage=collimator_leakage,
+            skin_thickness_cm=skin_thickness_cm,
+            skin_mu_per_cm=skin_mu_per_cm,
+            detector_intrinsic_efficiency=detector_intrinsic_efficiency,
+            response_scale=response_scale,
+            device=device,
+            dtype=torch.float32,
+        )
+
+        chunk_contribution = torch.sum(response_chunk * strengths_chunk[:, None, None], dim=0)
+        mean_counts += chunk_contribution.detach().cpu().numpy()
 
     return mean_counts
 
@@ -167,6 +199,9 @@ def generate_synthetic_dataset(
     fixed_sweep_x_range_deg,
     generation_angular_peak_angle_deg=0.0,
     generation_angular_width_deg=None,
+    generation_collimator_half_angle_deg=None,
+    generation_collimator_edge_width_deg=3.0,
+    generation_collimator_leakage=0.0,
     generation_skin_thickness_cm=0.0,
     generation_skin_mu_per_cm=0.0,
     generation_detector_intrinsic_efficiency=1.0,
@@ -185,6 +220,7 @@ def generate_synthetic_dataset(
         - "grid": current one-sided scan.
         - "line": one left-to-right scan line at trajectory_center height.
         - "around_center": detector positions orbit around trajectory_center.
+        - "around_center_grid": several around_center arcs stacked along Z.
 
     fixed_view_direction:
         3D vector for "fixed" mode, e.g. (0, 1, 0) or (1, 0, 0).
@@ -295,6 +331,9 @@ def generate_synthetic_dataset(
         distance_power=generation_distance_power,
         angular_peak_angle_deg=generation_angular_peak_angle_deg,
         angular_width_deg=generation_angular_width_deg,
+        collimator_half_angle_deg=generation_collimator_half_angle_deg,
+        collimator_edge_width_deg=generation_collimator_edge_width_deg,
+        collimator_leakage=generation_collimator_leakage,
         skin_thickness_cm=generation_skin_thickness_cm,
         skin_mu_per_cm=generation_skin_mu_per_cm,
         detector_intrinsic_efficiency=generation_detector_intrinsic_efficiency,
@@ -324,6 +363,9 @@ def generate_synthetic_dataset(
         "generation_distance_power": generation_distance_power,
         "generation_angular_peak_angle_deg": generation_angular_peak_angle_deg,
         "generation_angular_width_deg": generation_angular_width_deg,
+        "generation_collimator_half_angle_deg": generation_collimator_half_angle_deg,
+        "generation_collimator_edge_width_deg": generation_collimator_edge_width_deg,
+        "generation_collimator_leakage": generation_collimator_leakage,
         "generation_skin_thickness_cm": generation_skin_thickness_cm,
         "generation_skin_mu_per_cm": generation_skin_mu_per_cm,
         "generation_detector_intrinsic_efficiency": generation_detector_intrinsic_efficiency,

@@ -31,6 +31,40 @@ def angular_response(cos_theta, k, angular_peak_angle_deg=0.0, angular_width_deg
     return math.exp(-0.5 * ((theta - peak) / width) ** 2)
 
 
+def collimator_response(
+    cos_theta,
+    collimator_half_angle_deg=None,
+    collimator_edge_width_deg=3.0,
+    collimator_leakage=0.0,
+):
+    """
+    Angular acceptance imposed by a simple collimator cone.
+
+    The response is close to 1 inside collimator_half_angle_deg, then falls
+    through a soft logistic edge. collimator_leakage is a small side-response
+    floor that represents imperfect shielding/scatter.
+    """
+    cos_theta = float(cos_theta)
+    if cos_theta <= 0.0:
+        return 0.0
+    if collimator_half_angle_deg is None:
+        return 1.0
+
+    half_angle = float(collimator_half_angle_deg)
+    edge_width = max(float(collimator_edge_width_deg), EPS)
+    leakage = float(collimator_leakage)
+    if half_angle < 0.0:
+        raise ValueError("collimator_half_angle_deg must be >= 0.")
+    if not 0.0 <= leakage < 1.0:
+        raise ValueError("collimator_leakage must be in the range [0, 1).")
+
+    theta = math.degrees(math.acos(float(np.clip(cos_theta, -1.0, 1.0))))
+    raw = 1.0 / (1.0 + math.exp((theta - half_angle) / edge_width))
+    on_axis = 1.0 / (1.0 + math.exp(-half_angle / edge_width))
+    normalized = min(raw / max(on_axis, EPS), 1.0)
+    return leakage + (1.0 - leakage) * normalized
+
+
 def skin_attenuation(cos_theta, skin_thickness_cm, skin_mu_per_cm):
     """
     Attenuation through a thin skin slab directly in front of the detector.

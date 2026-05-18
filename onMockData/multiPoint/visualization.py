@@ -8,7 +8,11 @@ import numpy as np
 
 from common.geometry import EPS
 from common.visualization import finalize_figure, set_3d_axis_limits, set_equal_3d_axes
-from common.detector_response_components import angular_response, skin_attenuation
+from common.detector_response_components import (
+    angular_response,
+    collimator_response,
+    skin_attenuation,
+)
 
 
 def plot_detector_forward_directions(
@@ -347,12 +351,14 @@ def visualize_activity_map_comparison(
     candidate_positions,
     true_activity,
     reconstructed_activity,
+    component_matching=None,
+    voxel_size_cm=1.0,
     save_path=None,
     show=False,
     max_voxels=300,
     axis_limits=None,
 ):
-    """Show true and reconstructed voxel activity maps side by side."""
+    """Show true/reconstructed activity maps and optional blob matching."""
     import matplotlib.pyplot as plt
 
     translations = dataset["translations"]
@@ -361,11 +367,15 @@ def visualize_activity_map_comparison(
     true_activity = np.asarray(true_activity, dtype=float)
     reconstructed_activity = np.asarray(reconstructed_activity, dtype=float)
 
-    fig = plt.figure(figsize=(15, 7))
+    has_component_panel = component_matching is not None
+    fig = plt.figure(figsize=(28, 7) if has_component_panel else (15, 7))
     axes = [
-        fig.add_subplot(121, projection="3d"),
-        fig.add_subplot(122, projection="3d"),
+        fig.add_subplot(141 if has_component_panel else 121, projection="3d"),
+        fig.add_subplot(142 if has_component_panel else 122, projection="3d"),
     ]
+    if has_component_panel:
+        axes.append(fig.add_subplot(143, projection="3d"))
+        axes.append(fig.add_subplot(144, projection="3d"))
 
     def plot_activity_panel(ax, activity, title, cmap, label, show_search_bounds=False):
         points_for_scale = [translations, true_source_positions]
@@ -434,8 +444,297 @@ def visualize_activity_map_comparison(
         "inferno",
         "reconstructed activity",
     )
+    if has_component_panel:
+        plot_thresholded_activity_panel(
+            ax=axes[2],
+            dataset=dataset,
+            candidate_positions=candidate_positions,
+            true_activity=true_activity,
+            reconstructed_activity=reconstructed_activity,
+            threshold_fraction=component_matching["threshold_fraction"],
+            axis_limits=axis_limits,
+            title="Voxels above blob threshold",
+        )
+        plot_component_matching_panel(
+            ax=axes[3],
+            dataset=dataset,
+            candidate_positions=candidate_positions,
+            component_matching=component_matching,
+            voxel_size_cm=voxel_size_cm,
+            axis_limits=axis_limits,
+            title="Activity blob matching",
+        )
 
     fig.suptitle("True vs reconstructed activity maps")
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def plot_thresholded_activity_panel(
+    ax,
+    dataset,
+    candidate_positions,
+    true_activity,
+    reconstructed_activity,
+    threshold_fraction,
+    axis_limits=None,
+    title="Voxels above blob threshold",
+):
+    """Draw voxels that pass the blob-detection threshold for true and recon maps."""
+    translations = np.asarray(dataset["translations"], dtype=float)
+    true_source_positions = np.array([source["position"] for source in dataset["true_sources"]])
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    true_activity = np.maximum(np.asarray(true_activity, dtype=float), 0.0)
+    reconstructed_activity = np.maximum(np.asarray(reconstructed_activity, dtype=float), 0.0)
+    threshold_fraction = float(threshold_fraction)
+    points_for_scale = [translations, true_source_positions]
+
+    ax.plot(
+        translations[:, 0],
+        translations[:, 1],
+        translations[:, 2],
+        color="tab:blue",
+        linewidth=1.8,
+        alpha=0.85,
+        label="detector trajectory",
+    )
+
+    true_mask = np.zeros_like(true_activity, dtype=bool)
+    if len(true_activity) > 0 and float(np.max(true_activity)) > EPS:
+        true_mask = true_activity >= threshold_fraction * float(np.max(true_activity))
+    reconstructed_mask = np.zeros_like(reconstructed_activity, dtype=bool)
+    if len(reconstructed_activity) > 0 and float(np.max(reconstructed_activity)) > EPS:
+        reconstructed_mask = (
+            reconstructed_activity
+            >= threshold_fraction * float(np.max(reconstructed_activity))
+        )
+
+    if np.any(true_mask):
+        true_positions = candidate_positions[true_mask]
+        ax.scatter(
+            true_positions[:, 0],
+            true_positions[:, 1],
+            true_positions[:, 2],
+            color="tab:green",
+            s=34,
+            marker="o",
+            alpha=0.55,
+            depthshade=False,
+            label="true active voxels",
+        )
+        points_for_scale.append(true_positions)
+
+    if np.any(reconstructed_mask):
+        reconstructed_positions = candidate_positions[reconstructed_mask]
+        ax.scatter(
+            reconstructed_positions[:, 0],
+            reconstructed_positions[:, 1],
+            reconstructed_positions[:, 2],
+            color="tab:red",
+            s=34,
+            marker="^",
+            alpha=0.55,
+            depthshade=False,
+            label="reconstructed active voxels",
+        )
+        points_for_scale.append(reconstructed_positions)
+
+    if axis_limits is None:
+        set_equal_3d_axes(ax, np.vstack(points_for_scale))
+    else:
+        set_3d_axis_limits(ax, axis_limits)
+
+    ax.set_title(f"{title}\nthreshold {100.0 * threshold_fraction:.1f}% of max")
+    ax.set_xlabel("x world [cm]")
+    ax.set_ylabel("y world [cm]")
+    ax.set_zlabel("z world [cm]")
+    ax.legend(loc="upper right")
+
+
+def plot_component_box(
+    ax,
+    component,
+    candidate_positions,
+    voxel_size_cm,
+    color,
+    linewidth,
+    alpha,
+    label=None,
+):
+    """Draw a wireframe box enclosing one activity component."""
+    positions = candidate_positions[component["indices"]]
+    half_voxel = 0.5 * float(voxel_size_cm)
+    minimum = np.min(positions, axis=0) - half_voxel
+    maximum = np.max(positions, axis=0) + half_voxel
+
+    corners = np.array(
+        [
+            [x, y, z]
+            for x in (minimum[0], maximum[0])
+            for y in (minimum[1], maximum[1])
+            for z in (minimum[2], maximum[2])
+        ],
+        dtype=float,
+    )
+    edges = [
+        (0, 1), (0, 2), (1, 3), (2, 3),
+        (4, 5), (4, 6), (5, 7), (6, 7),
+        (0, 4), (1, 5), (2, 6), (3, 7),
+    ]
+    for edge_index, (start, end) in enumerate(edges):
+        ax.plot(
+            corners[[start, end], 0],
+            corners[[start, end], 1],
+            corners[[start, end], 2],
+            color=color,
+            linewidth=linewidth,
+            alpha=alpha,
+            label=label if edge_index == 0 else None,
+        )
+
+    return corners
+
+
+def plot_component_matching_panel(
+    ax,
+    dataset,
+    candidate_positions,
+    component_matching,
+    voxel_size_cm,
+    axis_limits=None,
+    title="Activity blob matching",
+):
+    """Draw blob envelopes and match arrows on an existing 3D axis."""
+    translations = np.asarray(dataset["translations"], dtype=float)
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    true_components = component_matching.get("true_components", [])
+    reconstructed_components = component_matching.get("reconstructed_components", [])
+    points_for_scale = [translations]
+
+    ax.plot(
+        translations[:, 0],
+        translations[:, 1],
+        translations[:, 2],
+        color="tab:blue",
+        linewidth=2.0,
+        alpha=0.85,
+        label="detector trajectory",
+    )
+
+    for component_index, component in enumerate(true_components):
+        corners = plot_component_box(
+            ax=ax,
+            component=component,
+            candidate_positions=candidate_positions,
+            voxel_size_cm=voxel_size_cm,
+            color="tab:green",
+            linewidth=2.2,
+            alpha=0.85,
+            label="true blob envelope" if component_index == 0 else None,
+        )
+        points_for_scale.append(corners)
+        center = component["centroid"]
+        ax.scatter(
+            center[0],
+            center[1],
+            center[2],
+            color="tab:green",
+            s=35,
+            marker="o",
+            depthshade=False,
+        )
+        ax.text(center[0], center[1], center[2], f"T{component['label']}", fontsize=9)
+
+    for component_index, component in enumerate(reconstructed_components):
+        corners = plot_component_box(
+            ax=ax,
+            component=component,
+            candidate_positions=candidate_positions,
+            voxel_size_cm=voxel_size_cm,
+            color="tab:red",
+            linewidth=2.0,
+            alpha=0.85,
+            label="reconstructed blob envelope" if component_index == 0 else None,
+        )
+        points_for_scale.append(corners)
+        center = component["centroid"]
+        ax.scatter(
+            center[0],
+            center[1],
+            center[2],
+            color="tab:red",
+            s=35,
+            marker="^",
+            depthshade=False,
+        )
+        ax.text(center[0], center[1], center[2], f"R{component['label']}", fontsize=9)
+
+    true_by_label = {
+        int(component["label"]): component
+        for component in true_components
+    }
+    reconstructed_by_label = {
+        int(component["label"]): component
+        for component in reconstructed_components
+    }
+    for match_index, match in enumerate(component_matching.get("matches", [])):
+        reconstructed_component = reconstructed_by_label.get(int(match["reconstructed_label"]))
+        true_component = true_by_label.get(int(match["true_label"]))
+        if reconstructed_component is None or true_component is None:
+            continue
+
+        start = np.asarray(reconstructed_component["centroid"], dtype=float)
+        end = np.asarray(true_component["centroid"], dtype=float)
+        vector = end - start
+        ax.quiver(
+            start[0],
+            start[1],
+            start[2],
+            vector[0],
+            vector[1],
+            vector[2],
+            color="black",
+            linewidth=1.6,
+            arrow_length_ratio=0.18,
+            alpha=0.85,
+            label="matched centroid vector" if match_index == 0 else None,
+        )
+        points_for_scale.append(np.vstack([start, end]))
+
+    if axis_limits is None:
+        set_equal_3d_axes(ax, np.vstack(points_for_scale))
+    else:
+        set_3d_axis_limits(ax, axis_limits)
+
+    ax.set_title(title)
+    ax.set_xlabel("x world [cm]")
+    ax.set_ylabel("y world [cm]")
+    ax.set_zlabel("z world [cm]")
+    ax.legend(loc="upper right")
+
+
+def visualize_activity_component_matching(
+    dataset,
+    candidate_positions,
+    component_matching,
+    voxel_size_cm,
+    save_path=None,
+    show=False,
+    axis_limits=None,
+):
+    """Show only blob envelopes and match arrows between reconstructed and true blobs."""
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(8, 7))
+    ax = fig.add_subplot(111, projection="3d")
+    plot_component_matching_panel(
+        ax=ax,
+        dataset=dataset,
+        candidate_positions=candidate_positions,
+        component_matching=component_matching,
+        voxel_size_cm=voxel_size_cm,
+        axis_limits=axis_limits,
+    )
+
     finalize_figure(fig, save_path=save_path, show=show)
 
 
@@ -643,7 +942,7 @@ def visualize_forward_response_components(
     """Show detector-response component maps before reconstruction."""
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 4, figsize=(17, 8), constrained_layout=True)
+    fig, axes = plt.subplots(3, 3, figsize=(18, 11), constrained_layout=True)
     axes = axes.ravel()
 
     _add_heatmap(
@@ -691,6 +990,14 @@ def visualize_forward_response_components(
     _add_heatmap(
         fig,
         axes[5],
+        diagnostics["collimator_response"],
+        "collimator response",
+        "gain",
+        cmap="viridis",
+    )
+    _add_heatmap(
+        fig,
+        axes[6],
         diagnostics["skin_attenuation"],
         "skin attenuation",
         "transmission",
@@ -698,7 +1005,7 @@ def visualize_forward_response_components(
     )
     _add_heatmap(
         fig,
-        axes[6],
+        axes[7],
         diagnostics["distance_factor"],
         "extra distance factor",
         "factor",
@@ -706,7 +1013,7 @@ def visualize_forward_response_components(
     )
     _add_heatmap(
         fig,
-        axes[7],
+        axes[8],
         diagnostics["cos_theta"],
         "cos(theta)",
         "cos",
@@ -806,6 +1113,9 @@ def visualize_detector_response_curves(
     k,
     angular_peak_angle_deg,
     angular_width_deg,
+    collimator_half_angle_deg,
+    collimator_edge_width_deg,
+    collimator_leakage,
     skin_thickness_cm,
     skin_mu_per_cm,
     save_path=None,
@@ -828,6 +1138,18 @@ def visualize_detector_response_curves(
         ],
         dtype=float,
     )
+    collimator_values = np.array(
+        [
+            collimator_response(
+                cos_theta=cos_theta,
+                collimator_half_angle_deg=collimator_half_angle_deg,
+                collimator_edge_width_deg=collimator_edge_width_deg,
+                collimator_leakage=collimator_leakage,
+            )
+            for cos_theta in cos_values
+        ],
+        dtype=float,
+    )
     skin_values = np.array(
         [
             skin_attenuation(
@@ -842,8 +1164,14 @@ def visualize_detector_response_curves(
 
     fig, ax = plt.subplots(figsize=(8, 4.8))
     ax.plot(theta_values, angular_values, linewidth=2.0, label="angular response")
+    ax.plot(theta_values, collimator_values, linewidth=2.0, label="collimator response")
     ax.plot(theta_values, skin_values, linewidth=2.0, label="skin attenuation")
-    ax.plot(theta_values, angular_values * skin_values, linewidth=2.0, label="product")
+    ax.plot(
+        theta_values,
+        angular_values * collimator_values * skin_values,
+        linewidth=2.0,
+        label="product",
+    )
     ax.set_title("Detector response curves")
     ax.set_xlabel("incidence angle [deg]")
     ax.set_ylabel("factor")

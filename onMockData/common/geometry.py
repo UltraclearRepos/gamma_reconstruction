@@ -393,6 +393,8 @@ def make_detector_trajectory(
         - "around_center": orbit around trajectory_center in the XY plane.
           orbit_angle_span_deg controls the covered arc, e.g. 180 for a
           half-turn and 360 for a full orbit.
+        - "around_center_grid": several around_center arcs stacked along Z.
+          orbit_vertical_span sets the total up/down span of the stacked arcs.
 
     The nominal viewing direction is either constant, or it can be re-aimed
     towards the provided trajectory_center.
@@ -442,9 +444,20 @@ def make_detector_trajectory(
     elif trajectory_mode == "around_center":
         full_orbit = abs(abs(float(orbit_angle_span_deg)) - 360.0) < 1e-9
         angle_denominator = num_measurements if full_orbit else max(num_measurements - 1, 1)
+    elif trajectory_mode == "around_center_grid":
+        num_rows = max(1, int(round(math.sqrt(max(num_measurements, 1) / 2.0))))
+        num_columns = max(1, int(math.ceil(num_measurements / num_rows)))
+        vertical_positions = (
+            np.linspace(-orbit_vertical_span, orbit_vertical_span, num_rows)
+            if num_rows > 1
+            else np.array([0.0], dtype=float)
+        )
+        full_orbit = abs(abs(float(orbit_angle_span_deg)) - 360.0) < 1e-9
+        angle_denominator = num_columns if full_orbit else max(num_columns - 1, 1)
     else:
         raise ValueError(
-            "trajectory_mode must be 'grid', 'line', or 'around_center'. Got: "
+            "trajectory_mode must be 'grid', 'line', 'around_center', "
+            "or 'around_center_grid'. Got: "
             f"{trajectory_mode!r}"
         )
 
@@ -481,7 +494,7 @@ def make_detector_trajectory(
                 + standoff_distance * standoff_axis
                 + float(vertical_span) * vertical_axis
             )
-        else:
+        elif trajectory_mode == "around_center":
             orbit_fraction = 0.0 if num_measurements <= 1 else i / angle_denominator
             angle = math.radians(float(orbit_start_angle_deg))
             angle += math.radians(float(orbit_angle_span_deg)) * orbit_fraction
@@ -492,6 +505,24 @@ def make_detector_trajectory(
             radius = orbit_radius + orbit_radius_span * math.sin(2.0 * np.pi * orbit_fraction)
             radius = max(MIN_TRAJECTORY_DISTANCE, radius)
             vertical_offset = orbit_vertical_span * math.sin(2.0 * np.pi * orbit_fraction)
+            detector_position = trajectory_center + radius * radial_direction + vertical_offset * vertical_axis
+        else:
+            row = i // num_columns
+            column = i % num_columns
+            column_fraction = 0.0 if num_columns <= 1 else column / angle_denominator
+            if row % 2 == 1:
+                column_fraction = 1.0 - column_fraction
+
+            angle = math.radians(float(orbit_start_angle_deg))
+            angle += math.radians(float(orbit_angle_span_deg)) * column_fraction
+            radial_direction = (
+                math.cos(angle) * standoff_axis
+                + math.sin(angle) * lateral_axis
+            )
+            radius_phase = column_fraction + row / max(num_rows, 1)
+            radius = orbit_radius + orbit_radius_span * math.sin(2.0 * np.pi * radius_phase)
+            radius = max(MIN_TRAJECTORY_DISTANCE, radius)
+            vertical_offset = vertical_positions[row]
             detector_position = trajectory_center + radius * radial_direction + vertical_offset * vertical_axis
 
         if base_rotation is None:

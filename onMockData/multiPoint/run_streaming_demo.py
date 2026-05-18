@@ -176,7 +176,7 @@ def main():
     SEARCH_STOP_DISTANCE = 120.0  # Stop searching this far from each detector channel; window length = stop - start [cm].
     SEARCH_WIDTH = 45.0  # Full width of the detector-relative rectangular search box [cm].
     SEARCH_HEIGHT = 36.0  # Full height of the detector-relative rectangular search box [cm].
-    GRID_SIZE = 13
+    VOXEL_SIZE_CM = 8.0
 
     # Mock detector trajectory.
     TRAJECTORY_MODE = "grid"  # "grid" or "around_center"
@@ -289,7 +289,7 @@ def main():
         search_height=dataset["search_height"],
         true_sources=dataset["true_sources"],
         method=STREAMING_METHOD,
-        grid_size=GRID_SIZE,
+        voxel_size_cm=VOXEL_SIZE_CM,
         inner_iterations_per_update=INNER_ITERATIONS_PER_UPDATE,
         measurements_per_update=MEASUREMENTS_PER_UPDATE,
         sparsity_lambda=SPARSITY_LAMBDA,
@@ -324,7 +324,7 @@ def main():
         "SEARCH_STOP_DISTANCE": SEARCH_STOP_DISTANCE,
         "SEARCH_WIDTH": SEARCH_WIDTH,
         "SEARCH_HEIGHT": SEARCH_HEIGHT,
-        "GRID_SIZE": GRID_SIZE,
+        "VOXEL_SIZE_CM": VOXEL_SIZE_CM,
         "TRAJECTORY_MODE": TRAJECTORY_MODE,
         "ORIENTATION_MODE": ORIENTATION_MODE,
         "FIXED_VIEW_DIRECTION": FIXED_VIEW_DIRECTION,

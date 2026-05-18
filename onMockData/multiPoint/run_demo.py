@@ -15,7 +15,9 @@ if str(ON_MOCK_DATA_DIR) not in sys.path:
 from common.forward_model import compute_detector_response_diagnostics
 from reconstruction_algorithms import reconstruct_sources
 from metrics import (
+    print_activity_component_matching_summary,
     print_activity_map_similarity_summary,
+    summarize_activity_component_matching,
     summarize_activity_map_similarity,
 )
 from simulation import expected_counts_multi_source, generate_synthetic_dataset
@@ -42,23 +44,26 @@ def make_default_config():
 
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
-        "NUM_MEASUREMENTS": 30,  # Number of detector positions / generated measurements.
+        "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
         "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
-            {"position": (-4.4, -0.7, -1.0), "strength_per_second": 3200.0, "spread_cm": 0.45},  # lateral, moderately shallow node.
-            {"position": (2.7, 4.8, 2.8), "strength_per_second": 4200.0, "spread_cm": 0.95},  # deeper central node.
-            {"position": (6.5, 1.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 1.55},  # cranial/lateral shallow node.
+            {"position": (-5.0, -1.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.4},  # lateral, moderately shallow node.
+            {"position": (3.2, 1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.8},  # deeper central node.
+            # {"position": (6.5, 1.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 1.55},  # cranial/lateral shallow node.
         ],
         "NUM_CHANNELS": 16,  # Number of detector channels.
         "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
         "MEASUREMENT_DURATION_SECONDS": 1.0,  # Duration of one measurement; rates below are multiplied by this.
         "BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Mean background counts per channel per second.
-        "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,  # Channel-to-channel background std per second.
+        "BACKGROUND_CHANNEL_STD_PER_SECOND": 10.0,  # Channel-to-channel background std per second.
         "CHANNEL_SCALE_MEAN": 1.0,  # Mean multiplicative channel sensitivity.
         "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std.
         "GENERATION_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
         "GENERATION_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
         "GENERATION_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
-        "GENERATION_ANGULAR_WIDTH_DEG": 45.0,  # Width of angular acceptance curve [deg]; broad probe 30-80, collimated probe 5-30.
+        "GENERATION_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
+        "GENERATION_COLLIMATOR_HALF_ANGLE_DEG": 5.0,  # Collimator cone half-angle [deg]; narrow probe 8-20, broad/weak collimation 20-35.
+        "GENERATION_COLLIMATOR_EDGE_WIDTH_DEG": 3.0,  # Softness of collimator cutoff [deg]; sharp lead collimator 1-4, soft/uncertain 4-8.
+        "GENERATION_COLLIMATOR_LEAKAGE": 0.002,  # Side-response floor from imperfect shielding/scatter; ideal 0, realistic test 0.001-0.02.
         "GENERATION_SKIN_THICKNESS_CM": 0.2,  # Skin slab thickness [cm]; typical adult skin: 0.1-0.3, stress-test up to 0.5.
         "GENERATION_SKIN_MU_PER_CM": 0.15,  # Gamma attenuation coefficient for skin/soft tissue [1/cm]; rough low-energy range: 0.05-0.30.
         "GENERATION_DETECTOR_INTRINSIC_EFFICIENCY": 1.0,  # Detection probability scale after entering active material; physical range: 0-1.
@@ -70,7 +75,10 @@ def make_default_config():
         "ASSUMED_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
         "ASSUMED_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
         "ASSUMED_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
-        "ASSUMED_ANGULAR_WIDTH_DEG": 45.0,  # Width of angular acceptance curve [deg]; broad probe 30-80, collimated probe 5-30.
+        "ASSUMED_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
+        "ASSUMED_COLLIMATOR_HALF_ANGLE_DEG": 5.0,  # Collimator cone half-angle assumed by reconstruction [deg]; try 10-25.
+        "ASSUMED_COLLIMATOR_EDGE_WIDTH_DEG": 3.0,  # Assumed cutoff softness [deg]; smaller = stronger angular rejection.
+        "ASSUMED_COLLIMATOR_LEAKAGE": 0.002,  # Assumed side-response floor; increase only if measured side lobes are visible.
         "ASSUMED_SKIN_THICKNESS_CM": 0.2,  # Skin thickness assumed by reconstruction [cm]; typical adult skin: 0.1-0.3.
         "ASSUMED_SKIN_MU_PER_CM": 0.15,  # Skin attenuation coefficient assumed by reconstruction [1/cm]; rough low-energy range: 0.05-0.30.
         "ASSUMED_DETECTOR_INTRINSIC_EFFICIENCY": 1.0,  # Detection probability scale assumed by reconstruction; physical range: 0-1.
@@ -78,42 +86,47 @@ def make_default_config():
 
         # Reconstruction volume.
         "SEARCH_START_DISTANCE": 2.0,  # Start searching this far from each detector channel along detector forward axis [cm].
-        "SEARCH_STOP_DISTANCE": 15.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
+        "SEARCH_STOP_DISTANCE": 20.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
         "SEARCH_WIDTH": 10.0,  # Full width of the detector-relative rectangular search box [cm].
         "SEARCH_HEIGHT": 5.0,  # Full height of the detector-relative rectangular search box [cm].
         # The dataset derives the axis-aligned reconstruction box from the union of detector-relative search boxes.
-        "GRID_SIZE": 15,  # ML-EM candidate grid size per axis.
+        "VOXEL_SIZE_CM": 0.75,  # Reconstruction voxel spacing [cm]; smaller = denser 3D activity grid.
 
         # Mock detector trajectory.
-        "TRAJECTORY_MODE": "grid",  # "grid", "line", or "around_center"; here it approximates a raster ultrasound probe sweep over skin.
-        "TRAJECTORY_CENTER": (0.0, -2.0, 0.3),  # Reference center of the detector trajectory [cm].
+        "TRAJECTORY_MODE": "around_center_grid",  # "grid", "line", "around_center", or "around_center_grid".
+        "TRAJECTORY_CENTER": (0.0, 0.0, 0.0),  # Reference center of the detector trajectory [cm].
         "LATERAL_SPAN": 15.0,  # grid/line: max left/right offset from TRAJECTORY_CENTER [cm].
         "VERTICAL_SPAN": 3.0,  # grid: max up/down offset; line: fixed Z offset from TRAJECTORY_CENTER [cm].
         "BASE_DISTANCE": 5.0,  # grid/line: nominal detector distance from TRAJECTORY_CENTER [cm].
         "DISTANCE_SPAN": 0.2,  # grid only: sinusoidal variation of detector distance [cm].
-        "ORBIT_RADIUS": 6.2,  # around_center only: nominal probe path radius; roughly skin radius + 1 cm detector standoff.
-        "ORBIT_RADIUS_SPAN": 0.4,  # around_center only: small hand-pressure / neck-curvature distance variation [cm].
-        "ORBIT_ANGLE_SPAN_DEG": 125.0,  # around_center only: partial sweep over one side of the neck.
-        "ORBIT_START_ANGLE_DEG": -112.0,  # around_center only: starting angle in the XY plane.
-        "ORBIT_VERTICAL_SPAN": 0.3,  # around_center only: mild cranio-caudal probe motion during the sweep [cm].
+        "ORBIT_RADIUS": 13.0,  # around_center only: nominal probe path radius; roughly skin radius + 1 cm detector standoff.
+        "ORBIT_RADIUS_SPAN": 0.3,  # around_center only: small hand-pressure / neck-curvature distance variation [cm].
+        "ORBIT_ANGLE_SPAN_DEG": 180.0,  # around_center modes: arc angle; 180 gives a half-orbit.
+        "ORBIT_START_ANGLE_DEG": -90.0,  # around_center only: starting angle in the XY plane.
+        "ORBIT_VERTICAL_SPAN": 5.0,  # around_center_grid: half-span between stacked arcs along Z [cm].
 
-        "ORIENTATION_MODE": "fixed",  # "fixed" or "towards_target"; fixed mimics a probe swept over skin while pointing inward.
+        "ORIENTATION_MODE": "towards_target",  # "fixed" or "towards_target"; fixed mimics a probe swept over skin while pointing inward.
         "FIXED_VIEW_DIRECTION": (0, 1, 0),  # fixed mode only: detector forward direction in world coordinates.
-        "FIXED_SWEEP_Z_RANGE_DEG": 0.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
-        "FIXED_SWEEP_X_RANGE_DEG": 0.0,  # random up/down angle range around world X axis, sampled as +/- this value.
-        "ANGULAR_JITTER_DEG": 1.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
+        "FIXED_SWEEP_Z_RANGE_DEG": 15.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
+        "FIXED_SWEEP_X_RANGE_DEG": 5.0,  # random up/down angle range around world X axis, sampled as +/- this value.
+        "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
-        "NUM_ITERATIONS": 1000,  # ML-EM iteration count.
-        "HISTORY_INTERVAL": 100,  # How often ML-EM stores history snapshots.
+        "NUM_ITERATIONS": 100,  # ML-EM iteration count.
+        "HISTORY_INTERVAL": 10,  # How often ML-EM stores history snapshots.
         "SPARSITY_LAMBDA": 0.0,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
+        "SIEVE_SIGMA_CM": 1.0,  # Gaussian 3D sieve smoothing after each ML-EM iteration; 0 disables.
+        "MIN_COVERAGE_MEASUREMENTS": 8,  # Keep only voxels seen by at least this many detector positions.
+        "COVERAGE_RELATIVE_THRESHOLD": 0.05,  # Measurement counts as seeing a voxel above this fraction of its max response.
 
         # Activity-map similarity metric.
         "ACTIVITY_MAP_THRESHOLD_FRACTION": 0.25,  # Active-mask threshold as fraction of each map maximum.
+        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.50,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
+        "ACTIVITY_COMPONENT_MIN_VOXELS": 5,  # Minimum connected voxels needed to report a blob.
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,  # Print full generated measurement x channel table.
-        "UPDATE_FRAME_MAX_VOXELS": 10000000000,  # Max strongest voxels plotted in one history frame.
+        "UPDATE_FRAME_MAX_VOXELS": 1000000000,  # Max strongest voxels plotted in one history frame.
         "GIF_FPS": 1.0,  # GIF frame rate for history animation.
         "AXIS_LIMITS_3D": (  # 3D plot axis limits [cm].
             (-30, 30),
@@ -171,6 +184,9 @@ def run_experiment(overrides=None):
         generation_distance_power=config["GENERATION_DISTANCE_POWER"],
         generation_angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
         generation_angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
+        generation_collimator_half_angle_deg=config["GENERATION_COLLIMATOR_HALF_ANGLE_DEG"],
+        generation_collimator_edge_width_deg=config["GENERATION_COLLIMATOR_EDGE_WIDTH_DEG"],
+        generation_collimator_leakage=config["GENERATION_COLLIMATOR_LEAKAGE"],
         generation_skin_thickness_cm=config["GENERATION_SKIN_THICKNESS_CM"],
         generation_skin_mu_per_cm=config["GENERATION_SKIN_MU_PER_CM"],
         generation_detector_intrinsic_efficiency=config["GENERATION_DETECTOR_INTRINSIC_EFFICIENCY"],
@@ -213,6 +229,9 @@ def run_experiment(overrides=None):
         "assumed_distance_power": config["ASSUMED_DISTANCE_POWER"],
         "assumed_angular_peak_angle_deg": config["ASSUMED_ANGULAR_PEAK_DEG"],
         "assumed_angular_width_deg": config["ASSUMED_ANGULAR_WIDTH_DEG"],
+        "assumed_collimator_half_angle_deg": config["ASSUMED_COLLIMATOR_HALF_ANGLE_DEG"],
+        "assumed_collimator_edge_width_deg": config["ASSUMED_COLLIMATOR_EDGE_WIDTH_DEG"],
+        "assumed_collimator_leakage": config["ASSUMED_COLLIMATOR_LEAKAGE"],
         "assumed_skin_thickness_cm": config["ASSUMED_SKIN_THICKNESS_CM"],
         "assumed_skin_mu_per_cm": config["ASSUMED_SKIN_MU_PER_CM"],
         "assumed_detector_intrinsic_efficiency": config["ASSUMED_DETECTOR_INTRINSIC_EFFICIENCY"],
@@ -233,10 +252,13 @@ def run_experiment(overrides=None):
         search_width=dataset["search_width"],
         search_height=dataset["search_height"],
         method=config["reconstruction_method"],
-        grid_size=config["GRID_SIZE"],
+        voxel_size_cm=config["VOXEL_SIZE_CM"],
         num_iterations=config["NUM_ITERATIONS"],
         history_interval=config["HISTORY_INTERVAL"],
         sparsity_lambda=config["SPARSITY_LAMBDA"],
+        sieve_sigma_cm=config["SIEVE_SIGMA_CM"],
+        min_coverage_measurements=config["MIN_COVERAGE_MEASUREMENTS"],
+        coverage_relative_threshold=config["COVERAGE_RELATIVE_THRESHOLD"],
     )
     reconstruction_elapsed_seconds = perf_counter() - reconstruction_start_time
     true_voxel_activity = voxelize_true_source_activity(
@@ -249,6 +271,15 @@ def run_experiment(overrides=None):
         reconstructed_activity=result["activity"],
         threshold_fraction=config["ACTIVITY_MAP_THRESHOLD_FRACTION"],
     )
+    activity_component_matching = summarize_activity_component_matching(
+        true_activity=true_voxel_activity,
+        reconstructed_activity=result["activity"],
+        candidate_positions=result["candidate_positions"],
+        candidate_flat_indices=result["candidate_flat_indices"],
+        grid_shape=result["grid_shape"],
+        threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
+        min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+    )
 
     return {
         "config": config,
@@ -257,6 +288,7 @@ def run_experiment(overrides=None):
         "reconstruction_elapsed_seconds": reconstruction_elapsed_seconds,
         "true_voxel_activity": true_voxel_activity,
         "activity_map_similarity": activity_map_similarity,
+        "activity_component_matching": activity_component_matching,
     }
 
 
@@ -355,6 +387,18 @@ def main():
     print()
     print(f"Reconstruction time [s]: {experiment['reconstruction_elapsed_seconds']:.3f}")
     print(f"Reconstruction device:   {result['torch_device']}")
+    coverage = result.get("coverage", {})
+    if coverage:
+        print(
+            "Coverage mask:          "
+            f"before={coverage['total_voxels_before']}, "
+            f"kept={coverage['kept_voxels']}, "
+            f"removed={coverage['removed_voxels']} "
+            f"({100.0 * coverage['removed_voxel_fraction']:.1f}%), "
+            f"min/mean/max={coverage['coverage_count_min']} / "
+            f"{coverage['coverage_count_mean']:.2f} / "
+            f"{coverage['coverage_count_max']} measurements"
+        )
     timings = result.get("timings", {})
     if timings:
         print(
@@ -364,6 +408,7 @@ def main():
             f"MLEM={timings['mlem_iterations_seconds']:.3f}"
         )
     print_activity_map_similarity_summary(experiment["activity_map_similarity"])
+    print_activity_component_matching_summary(experiment["activity_component_matching"])
 
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
     forward_model_dir = output_dir / "forward_model"
@@ -397,6 +442,8 @@ def main():
         candidate_positions=result["candidate_positions"],
         true_activity=true_voxel_activity,
         reconstructed_activity=result["activity"],
+        component_matching=experiment["activity_component_matching"],
+        voxel_size_cm=result["voxel_size_cm"],
         save_path=output_dir / "activity_map_comparison.png",
         show=False,
         max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
@@ -406,6 +453,9 @@ def main():
         k=config["GENERATION_K"],
         angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
         angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
+        collimator_half_angle_deg=config["GENERATION_COLLIMATOR_HALF_ANGLE_DEG"],
+        collimator_edge_width_deg=config["GENERATION_COLLIMATOR_EDGE_WIDTH_DEG"],
+        collimator_leakage=config["GENERATION_COLLIMATOR_LEAKAGE"],
         skin_thickness_cm=config["GENERATION_SKIN_THICKNESS_CM"],
         skin_mu_per_cm=config["GENERATION_SKIN_MU_PER_CM"],
         save_path=forward_model_dir / "detector_response_curves.png",
@@ -430,6 +480,9 @@ def main():
             distance_power=config["GENERATION_DISTANCE_POWER"],
             angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
             angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
+            collimator_half_angle_deg=config["GENERATION_COLLIMATOR_HALF_ANGLE_DEG"],
+            collimator_edge_width_deg=config["GENERATION_COLLIMATOR_EDGE_WIDTH_DEG"],
+            collimator_leakage=config["GENERATION_COLLIMATOR_LEAKAGE"],
             skin_thickness_cm=config["GENERATION_SKIN_THICKNESS_CM"],
             skin_mu_per_cm=config["GENERATION_SKIN_MU_PER_CM"],
             detector_intrinsic_efficiency=config["GENERATION_DETECTOR_INTRINSIC_EFFICIENCY"],
@@ -447,6 +500,9 @@ def main():
             distance_power=config["GENERATION_DISTANCE_POWER"],
             angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
             angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
+            collimator_half_angle_deg=config["GENERATION_COLLIMATOR_HALF_ANGLE_DEG"],
+            collimator_edge_width_deg=config["GENERATION_COLLIMATOR_EDGE_WIDTH_DEG"],
+            collimator_leakage=config["GENERATION_COLLIMATOR_LEAKAGE"],
             skin_thickness_cm=config["GENERATION_SKIN_THICKNESS_CM"],
             skin_mu_per_cm=config["GENERATION_SKIN_MU_PER_CM"],
             detector_intrinsic_efficiency=config["GENERATION_DETECTOR_INTRINSIC_EFFICIENCY"],

@@ -2,9 +2,20 @@
 Metrics for evaluating multi-point activity reconstructions.
 """
 
+from collections import deque
+
 import numpy as np
 
 from common.geometry import EPS
+
+
+NEIGHBOR_OFFSETS_3D = tuple(
+    (dx, dy, dz)
+    for dx in (-1, 0, 1)
+    for dy in (-1, 0, 1)
+    for dz in (-1, 0, 1)
+    if not (dx == 0 and dy == 0 and dz == 0)
+)
 
 
 def summarize_activity_map_similarity(true_activity, reconstructed_activity, threshold_fraction=0.75):
@@ -118,3 +129,318 @@ def print_activity_map_similarity_summary(summary):
         f"{summary['active_voxel_recall']:.4f} / "
         f"{summary['active_voxel_precision']:.4f}"
     )
+
+
+def find_activity_components(
+    activity,
+    candidate_positions,
+    candidate_flat_indices,
+    grid_shape,
+    threshold_fraction,
+    min_component_voxels=1,
+):
+    """
+    Split high-activity voxels into connected 3D blobs.
+
+    Voxels are active when they are above threshold_fraction * max(activity).
+    Active voxels that touch by face, edge, or corner are treated as one blob.
+    """
+    activity = np.maximum(np.asarray(activity, dtype=float), 0.0)
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    candidate_flat_indices = np.asarray(candidate_flat_indices, dtype=np.int64)
+    grid_shape = tuple(int(value) for value in grid_shape)
+
+    if activity.shape != (len(candidate_positions),):
+        raise ValueError("activity and candidate_positions must describe the same voxels.")
+    if candidate_flat_indices.shape != activity.shape:
+        raise ValueError("candidate_flat_indices must have the same length as activity.")
+    if len(activity) == 0 or float(np.max(activity)) <= EPS:
+        return []
+
+    threshold_fraction = float(threshold_fraction)
+    if not 0.0 <= threshold_fraction <= 1.0:
+        raise ValueError("threshold_fraction must be between 0 and 1.")
+
+    threshold = threshold_fraction * float(np.max(activity))
+    active_candidate_indices = np.flatnonzero(activity >= threshold)
+    if len(active_candidate_indices) == 0:
+        return []
+
+    active_flat_to_candidate = {
+        int(candidate_flat_indices[candidate_index]): int(candidate_index)
+        for candidate_index in active_candidate_indices
+    }
+    candidate_grid_indices = np.column_stack(
+        np.unravel_index(candidate_flat_indices, grid_shape)
+    ).astype(np.int64)
+
+    visited = set()
+    components = []
+
+    for start_candidate_index in active_candidate_indices:
+        start_candidate_index = int(start_candidate_index)
+        if start_candidate_index in visited:
+            continue
+
+        queue = deque([start_candidate_index])
+        visited.add(start_candidate_index)
+        component_indices = []
+
+        while queue:
+            candidate_index = queue.popleft()
+            component_indices.append(candidate_index)
+            gx, gy, gz = candidate_grid_indices[candidate_index]
+
+            for dx, dy, dz in NEIGHBOR_OFFSETS_3D:
+                neighbor_grid_index = (int(gx + dx), int(gy + dy), int(gz + dz))
+                if (
+                    neighbor_grid_index[0] < 0
+                    or neighbor_grid_index[1] < 0
+                    or neighbor_grid_index[2] < 0
+                    or neighbor_grid_index[0] >= grid_shape[0]
+                    or neighbor_grid_index[1] >= grid_shape[1]
+                    or neighbor_grid_index[2] >= grid_shape[2]
+                ):
+                    continue
+
+                neighbor_flat = int(np.ravel_multi_index(neighbor_grid_index, grid_shape))
+                neighbor_candidate_index = active_flat_to_candidate.get(neighbor_flat)
+                if neighbor_candidate_index is None or neighbor_candidate_index in visited:
+                    continue
+
+                visited.add(neighbor_candidate_index)
+                queue.append(neighbor_candidate_index)
+
+        if len(component_indices) < int(min_component_voxels):
+            continue
+
+        indices = np.asarray(component_indices, dtype=np.int64)
+        component_activity = activity[indices]
+        component_positions = candidate_positions[indices]
+        total_activity = float(np.sum(component_activity))
+        peak_local_index = int(np.argmax(component_activity))
+        if total_activity > EPS:
+            centroid = np.average(
+                component_positions,
+                axis=0,
+                weights=component_activity,
+            )
+        else:
+            centroid = np.mean(component_positions, axis=0)
+
+        components.append(
+            {
+                "indices": indices,
+                "voxel_count": int(len(indices)),
+                "total_activity": total_activity,
+                "max_activity": float(component_activity[peak_local_index]),
+                "centroid": centroid,
+                "peak_position": component_positions[peak_local_index],
+            }
+        )
+
+    components.sort(key=lambda component: component["total_activity"], reverse=True)
+    for label, component in enumerate(components, start=1):
+        component["label"] = label
+    return components
+
+
+def min_component_voxel_distance(component_a, component_b, candidate_positions, chunk_size=512):
+    """Return the closest voxel-to-voxel distance between two components."""
+    positions_a = candidate_positions[component_a["indices"]]
+    positions_b = candidate_positions[component_b["indices"]]
+    best_squared = np.inf
+
+    for start in range(0, len(positions_a), int(chunk_size)):
+        chunk = positions_a[start:start + int(chunk_size)]
+        squared_distances = np.sum(
+            (chunk[:, np.newaxis, :] - positions_b[np.newaxis, :, :]) ** 2,
+            axis=2,
+        )
+        best_squared = min(best_squared, float(np.min(squared_distances)))
+
+    return float(np.sqrt(best_squared))
+
+
+def summarize_activity_component_matching(
+    true_activity,
+    reconstructed_activity,
+    candidate_positions,
+    candidate_flat_indices,
+    grid_shape,
+    threshold_fraction=0.5,
+    min_component_voxels=1,
+):
+    """
+    Compare reconstructed activity blobs with true activity blobs.
+
+    Components are matched one-to-one by nearest weighted centroid distance.
+    Extra reconstructed components and missed true components are reported.
+    """
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    true_components = find_activity_components(
+        activity=true_activity,
+        candidate_positions=candidate_positions,
+        candidate_flat_indices=candidate_flat_indices,
+        grid_shape=grid_shape,
+        threshold_fraction=threshold_fraction,
+        min_component_voxels=min_component_voxels,
+    )
+    reconstructed_components = find_activity_components(
+        activity=reconstructed_activity,
+        candidate_positions=candidate_positions,
+        candidate_flat_indices=candidate_flat_indices,
+        grid_shape=grid_shape,
+        threshold_fraction=threshold_fraction,
+        min_component_voxels=min_component_voxels,
+    )
+
+    candidate_pairs = []
+    for reconstructed_index, reconstructed_component in enumerate(reconstructed_components):
+        for true_index, true_component in enumerate(true_components):
+            centroid_distance = float(
+                np.linalg.norm(
+                    reconstructed_component["centroid"] - true_component["centroid"]
+                )
+            )
+            candidate_pairs.append((centroid_distance, reconstructed_index, true_index))
+
+    matched_reconstructed = set()
+    matched_true = set()
+    matches = []
+    for centroid_distance, reconstructed_index, true_index in sorted(candidate_pairs):
+        if reconstructed_index in matched_reconstructed or true_index in matched_true:
+            continue
+
+        reconstructed_component = reconstructed_components[reconstructed_index]
+        true_component = true_components[true_index]
+        matched_reconstructed.add(reconstructed_index)
+        matched_true.add(true_index)
+        matches.append(
+            {
+                "reconstructed_label": int(reconstructed_component["label"]),
+                "true_label": int(true_component["label"]),
+                "centroid_distance_cm": centroid_distance,
+                "closest_voxel_distance_cm": min_component_voxel_distance(
+                    reconstructed_component,
+                    true_component,
+                    candidate_positions,
+                ),
+                "peak_distance_cm": float(
+                    np.linalg.norm(
+                        reconstructed_component["peak_position"]
+                        - true_component["peak_position"]
+                    )
+                ),
+                "reconstructed_voxels": int(reconstructed_component["voxel_count"]),
+                "true_voxels": int(true_component["voxel_count"]),
+                "reconstructed_total_activity": float(
+                    reconstructed_component["total_activity"]
+                ),
+                "true_total_activity": float(true_component["total_activity"]),
+                "reconstructed_centroid": reconstructed_component["centroid"],
+                "true_centroid": true_component["centroid"],
+            }
+        )
+
+    extra_reconstructed = [
+        component
+        for index, component in enumerate(reconstructed_components)
+        if index not in matched_reconstructed
+    ]
+    missed_true = [
+        component
+        for index, component in enumerate(true_components)
+        if index not in matched_true
+    ]
+
+    centroid_distances = [match["centroid_distance_cm"] for match in matches]
+    closest_distances = [match["closest_voxel_distance_cm"] for match in matches]
+
+    return {
+        "threshold_fraction": float(threshold_fraction),
+        "min_component_voxels": int(min_component_voxels),
+        "true_components": true_components,
+        "reconstructed_components": reconstructed_components,
+        "true_component_count": int(len(true_components)),
+        "reconstructed_component_count": int(len(reconstructed_components)),
+        "matched_component_count": int(len(matches)),
+        "extra_reconstructed_count": int(len(extra_reconstructed)),
+        "missed_true_count": int(len(missed_true)),
+        "mean_centroid_distance_cm": (
+            float(np.mean(centroid_distances)) if centroid_distances else np.nan
+        ),
+        "max_centroid_distance_cm": (
+            float(np.max(centroid_distances)) if centroid_distances else np.nan
+        ),
+        "mean_closest_voxel_distance_cm": (
+            float(np.mean(closest_distances)) if closest_distances else np.nan
+        ),
+        "matches": matches,
+        "extra_reconstructed": extra_reconstructed,
+        "missed_true": missed_true,
+    }
+
+
+def print_activity_component_matching_summary(summary):
+    """Print reconstructed-vs-true blob matching metrics."""
+    print()
+    print("Activity component matching metrics:")
+    print(
+        " threshold/min voxels:      "
+        f"{100.0 * summary['threshold_fraction']:.1f}% of each max / "
+        f"{summary['min_component_voxels']}"
+    )
+    print(
+        " blobs true/recon/matched:  "
+        f"{summary['true_component_count']} / "
+        f"{summary['reconstructed_component_count']} / "
+        f"{summary['matched_component_count']}"
+    )
+    print(
+        " extra recon / missed true: "
+        f"{summary['extra_reconstructed_count']} / "
+        f"{summary['missed_true_count']}"
+    )
+    print(
+        " centroid distance mean/max [cm]: "
+        f"{summary['mean_centroid_distance_cm']:.4f} / "
+        f"{summary['max_centroid_distance_cm']:.4f}"
+    )
+    print(
+        " closest voxel distance mean [cm]: "
+        f"{summary['mean_closest_voxel_distance_cm']:.4f}"
+    )
+
+    for match in summary["matches"]:
+        recon_center = np.round(match["reconstructed_centroid"], 3)
+        true_center = np.round(match["true_centroid"], 3)
+        print(
+            "  "
+            f"R{match['reconstructed_label']} -> T{match['true_label']}: "
+            f"centroid={match['centroid_distance_cm']:.4f} cm, "
+            f"closest_voxels={match['closest_voxel_distance_cm']:.4f} cm, "
+            f"peak={match['peak_distance_cm']:.4f} cm, "
+            f"voxels={match['reconstructed_voxels']}/{match['true_voxels']}, "
+            f"centers recon/true={recon_center}/{true_center}"
+        )
+
+    for component in summary["extra_reconstructed"][:5]:
+        center = np.round(component["centroid"], 3)
+        print(
+            "  "
+            f"extra R{component['label']}: "
+            f"voxels={component['voxel_count']}, "
+            f"activity={component['total_activity']:.4f}, "
+            f"center={center}"
+        )
+
+    for component in summary["missed_true"][:5]:
+        center = np.round(component["centroid"], 3)
+        print(
+            "  "
+            f"missed T{component['label']}: "
+            f"voxels={component['voxel_count']}, "
+            f"activity={component['total_activity']:.4f}, "
+            f"center={center}"
+        )
