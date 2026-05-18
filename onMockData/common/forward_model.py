@@ -2,7 +2,10 @@
 Forward measurement model for the moving gamma detector.
 """
 
+import math
+
 import numpy as np
+import torch
 
 from common.detector_response_components import (
     angular_response,
@@ -116,6 +119,128 @@ def compute_detector_response(
                 * channel_response
             )
 
+    return response
+
+
+def compute_detector_response_torch(
+    source_position,
+    geometry,
+    rotations,
+    translations,
+    channel_scales,
+    k,
+    distance_power=2.0,
+    angular_peak_angle_deg=0.0,
+    angular_width_deg=None,
+    skin_thickness_cm=0.0,
+    skin_mu_per_cm=0.0,
+    detector_intrinsic_efficiency=1.0,
+    response_scale=1.0,
+    device=None,
+    dtype=torch.float32,
+):
+    """
+    Torch/GPU version of compute_detector_response.
+
+    source_position can be one position with shape (3,) or a chunk of positions
+    with shape (num_sources, 3). The returned tensor has shape
+    (num_measurements, num_channels) for one source, or
+    (num_sources, num_measurements, num_channels) for a source chunk.
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    distance_power = float(distance_power)
+    if distance_power < 0.0:
+        raise ValueError("distance_power must be >= 0.")
+    detector_intrinsic_efficiency = float(detector_intrinsic_efficiency)
+    if detector_intrinsic_efficiency < 0.0:
+        raise ValueError("detector_intrinsic_efficiency must be >= 0.")
+    response_scale = float(response_scale)
+    if response_scale < 0.0:
+        raise ValueError("response_scale must be >= 0.")
+
+    source_positions = torch.as_tensor(source_position, dtype=dtype, device=device)
+    single_source = source_positions.ndim == 1
+    if single_source:
+        source_positions = source_positions[None, :]
+
+    rotations = torch.as_tensor(rotations, dtype=dtype, device=device)
+    translations = torch.as_tensor(translations, dtype=dtype, device=device)
+    channel_scales = torch.as_tensor(channel_scales, dtype=dtype, device=device)
+    diode_positions_local = torch.as_tensor(
+        geometry["diode_positions_local"],
+        dtype=dtype,
+        device=device,
+    )
+    diode_normals_local = torch.as_tensor(
+        geometry["diode_normals_local"],
+        dtype=dtype,
+        device=device,
+    )
+    surface_offsets_local, patch_area = channel_surface_offsets(geometry)
+    surface_offsets_local = torch.as_tensor(surface_offsets_local, dtype=dtype, device=device)
+    patch_area = torch.as_tensor(float(patch_area), dtype=dtype, device=device)
+
+    surface_points_local = diode_positions_local[:, None, :] + surface_offsets_local[None, :, :]
+    surface_points_world = (
+        torch.einsum("mij,csj->mcsi", rotations, surface_points_local)
+        + translations[:, None, None, :]
+    )
+    diode_normals_world = torch.einsum("mij,cj->mci", rotations, diode_normals_local)
+
+    vector_to_source = (
+        source_positions[:, None, None, None, :]
+        - surface_points_world[None, :, :, :, :]
+    )
+    distance = torch.linalg.norm(vector_to_source, dim=-1)
+    direction_to_source = vector_to_source / torch.clamp(distance[..., None], min=EPS)
+    cos_theta = torch.sum(
+        direction_to_source * diode_normals_world[None, :, :, None, :],
+        dim=-1,
+    )
+    positive_cos = torch.clamp(cos_theta, min=0.0)
+
+    solid_angle_patch = (
+        patch_area
+        * positive_cos
+        / torch.clamp(4.0 * math.pi * distance * distance, min=EPS)
+    )
+
+    if angular_width_deg is None:
+        angular_gain = positive_cos ** float(k)
+    else:
+        theta_deg = torch.rad2deg(torch.acos(torch.clamp(cos_theta, min=-1.0, max=1.0)))
+        peak = float(angular_peak_angle_deg)
+        width = max(float(angular_width_deg), EPS)
+        angular_gain = torch.exp(-0.5 * ((theta_deg - peak) / width) ** 2)
+
+    thickness = float(skin_thickness_cm)
+    mu = float(skin_mu_per_cm)
+    if thickness > 0.0 and mu > 0.0:
+        skin_path_length = thickness / torch.clamp(cos_theta, min=0.05)
+        attenuation = torch.exp(-mu * skin_path_length)
+    else:
+        attenuation = 1.0
+
+    if distance_power > 0.0:
+        empirical_distance = 1.0 / torch.clamp(distance ** distance_power, min=EPS)
+    else:
+        empirical_distance = 1.0
+
+    response = torch.sum(
+        solid_angle_patch * angular_gain * attenuation * empirical_distance,
+        dim=3,
+    )
+    response = (
+        response
+        * channel_scales[None, None, :]
+        * detector_intrinsic_efficiency
+        * response_scale
+    )
+
+    if single_source:
+        return response[0]
     return response
 
 
