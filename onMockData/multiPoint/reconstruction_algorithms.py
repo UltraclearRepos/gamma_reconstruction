@@ -3,13 +3,34 @@ Reconstruction algorithms for multi-point source experiments.
 """
 
 import numpy as np
+import torch
 
 from common.geometry import EPS, points_in_detector_box
 from reconstruction_objective import (
     build_system_matrix,
-    poisson_negative_log_likelihood,
     predict_counts_from_activity,
 )
+
+
+def to_tensor(array, device):
+    """Move numeric data to the Torch device used by ML-EM."""
+    return torch.as_tensor(array, dtype=torch.float64, device=device)
+
+
+def tensor_to_float(value):
+    """Convert a scalar Torch tensor to a plain Python float."""
+    return float(value.detach().cpu().item())
+
+
+def tensor_to_numpy(array):
+    """Copy a Torch tensor back to NumPy for plotting and metrics."""
+    return array.detach().cpu().numpy()
+
+
+def poisson_negative_log_likelihood_torch(counts, mean_counts):
+    """Poisson negative log-likelihood computed in Torch."""
+    mean_counts = torch.clamp(mean_counts, min=EPS)
+    return tensor_to_float(torch.sum(mean_counts - counts * torch.log(mean_counts)))
 
 
 def reconstruct_sources(
@@ -167,6 +188,8 @@ def mlem_reconstruction(
         search_width=search_width,
         search_height=search_height,
     )
+    # H is still built on CPU in simple voxel loops. This keeps the forward model easy to read,
+    # but it is the next natural target for a vectorized/Torch implementation.
     system_matrix = build_system_matrix(         # system_matrix is H: rows are flattened measurement/channel pairs, columns are voxels.
         candidate_positions=candidate_positions, # H[row, voxel] says how much one unit of activity in that voxel would add to that detector count for specific measurement and specific channel.
         geometry=geometry,
@@ -183,20 +206,34 @@ def mlem_reconstruction(
         assumed_response_scale=assumed_response_scale,
     )
     
-    counts_flat = counts.ravel()
-    backgrounds_flat = np.broadcast_to(assumed_backgrounds, counts.shape).ravel()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    torch_device_name = str(device)
+    system_matrix_tensor = to_tensor(system_matrix, device)
+    counts_flat = to_tensor(np.asarray(counts, dtype=float).ravel(), device)
+    backgrounds_flat = to_tensor(
+        np.broadcast_to(assumed_backgrounds, counts.shape).astype(float).ravel(),
+        device,
+    )
     
     sparsity_lambda = float(sparsity_lambda)
     if sparsity_lambda < 0.0:
         raise ValueError("sparsity_lambda must be >= 0.")
 
-    sensitivity = np.sum(system_matrix, axis=0) # Sensitivity tells us how much each voxel contribute to detector response, not for each measurement, but in total
+    sensitivity = torch.sum(system_matrix_tensor, dim=0)
+    # Sensitivity tells us how much each voxel contribute to detector response, not for each measurement, but in total
 
-    initial_signal = np.maximum(counts_flat - backgrounds_flat, 0.0)
-    initial_activity = np.sum(initial_signal) / max(float(np.sum(sensitivity)), EPS)
+    initial_signal = torch.clamp(counts_flat - backgrounds_flat, min=0.0)
+    initial_activity = tensor_to_float(
+        torch.sum(initial_signal) / torch.clamp(torch.sum(sensitivity), min=EPS)
+    )
     
-    activity = np.full(len(candidate_positions), max(initial_activity, EPS), dtype=float) # Start from a flat activity map: every candidate voxel gets the same positive activity. 
-                                                                                          # ML-EM will then move activity toward voxels whose H columns best explain the counts.
+    activity = torch.full(
+        (len(candidate_positions),),
+        max(initial_activity, EPS),
+        dtype=torch.float64,
+        device=device,
+    ) # Start from a flat activity map: every candidate voxel gets the same positive activity.
+      # ML-EM will then move activity toward voxels whose H columns best explain the counts.
 
     history = []
     activity_history = []
@@ -204,11 +241,11 @@ def mlem_reconstruction(
         
         predicted_counts = predict_counts_from_activity( # BACKGROUND + H @ ACTIVITY -> Based on each voxel's constibution to each measurement-channel pair and activity -> predicts counts for each measurement and each channel.
             backgrounds_flat=backgrounds_flat,
-            system_matrix=system_matrix,
+            system_matrix=system_matrix_tensor,
             activity=activity,
         )
-        ratio = counts_flat / np.maximum(predicted_counts, EPS) # Ratio tells how much error we have in each measurement-channel pair.
-        correction = (system_matrix.T @ ratio) / np.maximum(sensitivity + sparsity_lambda, EPS) # So crucial step. H tells us how much each voxel contribute to measurement-channel pair prediction and ratio tells us how bad prediction was.
+        ratio = counts_flat / torch.clamp(predicted_counts, min=EPS) # Ratio tells how much error we have in each measurement-channel pair.
+        correction = (system_matrix_tensor.T @ ratio) / torch.clamp(sensitivity + sparsity_lambda, min=EPS) # So crucial step. H tells us how much each voxel contribute to measurement-channel pair prediction and ratio tells us how bad prediction was.
                                                                               # H.T @ ratio gives each voxel a response-weighted sum of measurement errors. Dividing by sensitivity normalizes it by total voxel response,
                                                                               # so correction[voxel] becomes the H-weighted average ratio for that voxel, not just a larger sum for better-covered voxels.
                                                                               # sparsity_lambda adds an L1-like penalty that makes weak diffuse activity shrink faster.
@@ -217,22 +254,27 @@ def mlem_reconstruction(
         if iteration == 1 or iteration % history_interval == 0 or iteration == num_iterations:
             predicted_counts = predict_counts_from_activity(
                 backgrounds_flat=backgrounds_flat,
-                system_matrix=system_matrix,
+                system_matrix=system_matrix_tensor,
                 activity=activity,
             )
             history.append(
                 {
                     "iteration": float(iteration),
-                    "score": poisson_negative_log_likelihood(counts_flat, predicted_counts),
-                    "total_activity": float(np.sum(activity)),
-                    "max_activity": float(np.max(activity)),
+                    "score": poisson_negative_log_likelihood_torch(
+                        counts_flat,
+                        predicted_counts,
+                    ),
+                    "total_activity": tensor_to_float(torch.sum(activity)),
+                    "max_activity": tensor_to_float(torch.max(activity)),
+                    "torch_device": torch_device_name,
                 }
             )
-            activity_history.append(activity.copy())
+            activity_history.append(tensor_to_numpy(activity).copy())
 
     return {
         "candidate_positions": candidate_positions,
-        "activity": activity,
+        "activity": tensor_to_numpy(activity).copy(),
         "activity_history": [snapshot.copy() for snapshot in activity_history],
         "history": history,
+        "torch_device": torch_device_name,
     }

@@ -354,6 +354,7 @@ def main():
 
     print()
     print(f"Reconstruction time [s]: {experiment['reconstruction_elapsed_seconds']:.3f}")
+    print(f"Reconstruction device:   {result['torch_device']}")
     print_activity_map_similarity_summary(experiment["activity_map_similarity"])
 
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
