@@ -368,14 +368,14 @@ def visualize_activity_map_comparison(
     reconstructed_activity = np.asarray(reconstructed_activity, dtype=float)
 
     has_component_panel = component_matching is not None
-    fig = plt.figure(figsize=(28, 7) if has_component_panel else (15, 7))
+    fig = plt.figure(figsize=(15, 13) if has_component_panel else (15, 7))
     axes = [
-        fig.add_subplot(141 if has_component_panel else 121, projection="3d"),
-        fig.add_subplot(142 if has_component_panel else 122, projection="3d"),
+        fig.add_subplot(221 if has_component_panel else 121, projection="3d"),
+        fig.add_subplot(222 if has_component_panel else 122, projection="3d"),
     ]
     if has_component_panel:
-        axes.append(fig.add_subplot(143, projection="3d"))
-        axes.append(fig.add_subplot(144, projection="3d"))
+        axes.append(fig.add_subplot(223, projection="3d"))
+        axes.append(fig.add_subplot(224, projection="3d"))
 
     def plot_activity_panel(ax, activity, title, cmap, label, show_search_bounds=False):
         points_for_scale = [translations, true_source_positions]
@@ -479,7 +479,7 @@ def plot_thresholded_activity_panel(
     axis_limits=None,
     title="Voxels above blob threshold",
 ):
-    """Draw voxels that pass the blob-detection threshold for true and recon maps."""
+    """Draw full true-source voxels and reconstructed voxels above the blob threshold."""
     translations = np.asarray(dataset["translations"], dtype=float)
     true_source_positions = np.array([source["position"] for source in dataset["true_sources"]])
     candidate_positions = np.asarray(candidate_positions, dtype=float)
@@ -498,9 +498,7 @@ def plot_thresholded_activity_panel(
         label="detector trajectory",
     )
 
-    true_mask = np.zeros_like(true_activity, dtype=bool)
-    if len(true_activity) > 0 and float(np.max(true_activity)) > EPS:
-        true_mask = true_activity >= threshold_fraction * float(np.max(true_activity))
+    true_mask = true_activity > EPS
     reconstructed_mask = np.zeros_like(reconstructed_activity, dtype=bool)
     if len(reconstructed_activity) > 0 and float(np.max(reconstructed_activity)) > EPS:
         reconstructed_mask = (
@@ -519,7 +517,7 @@ def plot_thresholded_activity_panel(
             marker="o",
             alpha=0.55,
             depthshade=False,
-            label="true active voxels",
+            label="true source voxels",
         )
         points_for_scale.append(true_positions)
 
@@ -543,7 +541,7 @@ def plot_thresholded_activity_panel(
     else:
         set_3d_axis_limits(ax, axis_limits)
 
-    ax.set_title(f"{title}\nthreshold {100.0 * threshold_fraction:.1f}% of max")
+    ax.set_title(f"{title}\nrecon threshold {100.0 * threshold_fraction:.1f}% of max")
     ax.set_xlabel("x world [cm]")
     ax.set_ylabel("y world [cm]")
     ax.set_zlabel("z world [cm]")

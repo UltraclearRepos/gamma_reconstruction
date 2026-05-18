@@ -61,7 +61,7 @@ def make_default_config():
         "GENERATION_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
         "GENERATION_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
         "GENERATION_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
-        "GENERATION_COLLIMATOR_HALF_ANGLE_DEG": 5.0,  # Collimator cone half-angle [deg]; narrow probe 8-20, broad/weak collimation 20-35.
+        "GENERATION_COLLIMATOR_HALF_ANGLE_DEG": 15.0,  # Collimator cone half-angle [deg]; narrow probe 8-20, broad/weak collimation 20-35.
         "GENERATION_COLLIMATOR_EDGE_WIDTH_DEG": 3.0,  # Softness of collimator cutoff [deg]; sharp lead collimator 1-4, soft/uncertain 4-8.
         "GENERATION_COLLIMATOR_LEAKAGE": 0.002,  # Side-response floor from imperfect shielding/scatter; ideal 0, realistic test 0.001-0.02.
         "GENERATION_SKIN_THICKNESS_CM": 0.2,  # Skin slab thickness [cm]; typical adult skin: 0.1-0.3, stress-test up to 0.5.
@@ -76,7 +76,7 @@ def make_default_config():
         "ASSUMED_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
         "ASSUMED_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
         "ASSUMED_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
-        "ASSUMED_COLLIMATOR_HALF_ANGLE_DEG": 5.0,  # Collimator cone half-angle assumed by reconstruction [deg]; try 10-25.
+        "ASSUMED_COLLIMATOR_HALF_ANGLE_DEG": 15.0,  # Collimator cone half-angle assumed by reconstruction [deg]; try 10-25.
         "ASSUMED_COLLIMATOR_EDGE_WIDTH_DEG": 3.0,  # Assumed cutoff softness [deg]; smaller = stronger angular rejection.
         "ASSUMED_COLLIMATOR_LEAKAGE": 0.002,  # Assumed side-response floor; increase only if measured side lobes are visible.
         "ASSUMED_SKIN_THICKNESS_CM": 0.2,  # Skin thickness assumed by reconstruction [cm]; typical adult skin: 0.1-0.3.
@@ -121,7 +121,7 @@ def make_default_config():
 
         # Activity-map similarity metric.
         "ACTIVITY_MAP_THRESHOLD_FRACTION": 0.25,  # Active-mask threshold as fraction of each map maximum.
-        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.50,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
+        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.75,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
         "ACTIVITY_COMPONENT_MIN_VOXELS": 5,  # Minimum connected voxels needed to report a blob.
 
         # Visualization output.
@@ -277,6 +277,7 @@ def run_experiment(overrides=None):
         candidate_positions=result["candidate_positions"],
         candidate_flat_indices=result["candidate_flat_indices"],
         grid_shape=result["grid_shape"],
+        true_sources=dataset["true_sources"],
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
     )

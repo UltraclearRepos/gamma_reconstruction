@@ -245,6 +245,92 @@ def find_activity_components(
     return components
 
 
+def make_true_source_components(
+    true_sources,
+    candidate_positions,
+    min_component_voxels=1,
+):
+    """
+    Build true blob components directly from generated source definitions.
+
+    Unlike reconstructed blobs, true blobs are not thresholded. Each source keeps
+    all of its generated components because the simulation knows the full blob.
+    """
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    components = []
+    if len(candidate_positions) == 0:
+        return components
+
+    for source in true_sources:
+        source_components = source.get("components")
+        if source_components is None:
+            source_components = [
+                {
+                    "position": source["position"],
+                    "strength": source.get("strength", source.get("strength_per_second", 0.0)),
+                }
+            ]
+
+        component_positions = np.asarray(
+            [component["position"] for component in source_components],
+            dtype=float,
+        )
+        component_strengths = np.asarray(
+            [component["strength"] for component in source_components],
+            dtype=float,
+        )
+        if len(component_positions) == 0:
+            continue
+
+        squared_distances = np.sum(
+            (component_positions[:, np.newaxis, :] - candidate_positions[np.newaxis, :, :]) ** 2,
+            axis=2,
+        )
+        nearest_indices = np.argmin(squared_distances, axis=1)
+        source_activity_by_voxel = {}
+        for candidate_index, strength in zip(nearest_indices, component_strengths):
+            candidate_index = int(candidate_index)
+            source_activity_by_voxel[candidate_index] = (
+                source_activity_by_voxel.get(candidate_index, 0.0) + float(strength)
+            )
+
+        indices = np.array(sorted(source_activity_by_voxel), dtype=np.int64)
+        if len(indices) < int(min_component_voxels):
+            continue
+
+        component_activity = np.array(
+            [source_activity_by_voxel[int(index)] for index in indices],
+            dtype=float,
+        )
+        component_positions = candidate_positions[indices]
+        total_activity = float(np.sum(component_activity))
+        peak_local_index = int(np.argmax(component_activity))
+        if total_activity > EPS:
+            centroid = np.average(
+                component_positions,
+                axis=0,
+                weights=component_activity,
+            )
+        else:
+            centroid = np.mean(component_positions, axis=0)
+
+        components.append(
+            {
+                "indices": indices,
+                "voxel_count": int(len(indices)),
+                "total_activity": total_activity,
+                "max_activity": float(component_activity[peak_local_index]),
+                "centroid": centroid,
+                "peak_position": component_positions[peak_local_index],
+            }
+        )
+
+    components.sort(key=lambda component: component["total_activity"], reverse=True)
+    for label, component in enumerate(components, start=1):
+        component["label"] = label
+    return components
+
+
 def min_component_voxel_distance(component_a, component_b, candidate_positions, chunk_size=512):
     """Return the closest voxel-to-voxel distance between two components."""
     positions_a = candidate_positions[component_a["indices"]]
@@ -268,6 +354,7 @@ def summarize_activity_component_matching(
     candidate_positions,
     candidate_flat_indices,
     grid_shape,
+    true_sources=None,
     threshold_fraction=0.5,
     min_component_voxels=1,
 ):
@@ -278,14 +365,21 @@ def summarize_activity_component_matching(
     Extra reconstructed components and missed true components are reported.
     """
     candidate_positions = np.asarray(candidate_positions, dtype=float)
-    true_components = find_activity_components(
-        activity=true_activity,
-        candidate_positions=candidate_positions,
-        candidate_flat_indices=candidate_flat_indices,
-        grid_shape=grid_shape,
-        threshold_fraction=threshold_fraction,
-        min_component_voxels=min_component_voxels,
-    )
+    if true_sources is None:
+        true_components = find_activity_components(
+            activity=true_activity,
+            candidate_positions=candidate_positions,
+            candidate_flat_indices=candidate_flat_indices,
+            grid_shape=grid_shape,
+            threshold_fraction=0.0,
+            min_component_voxels=min_component_voxels,
+        )
+    else:
+        true_components = make_true_source_components(
+            true_sources=true_sources,
+            candidate_positions=candidate_positions,
+            min_component_voxels=min_component_voxels,
+        )
     reconstructed_components = find_activity_components(
         activity=reconstructed_activity,
         candidate_positions=candidate_positions,
@@ -360,6 +454,7 @@ def summarize_activity_component_matching(
     return {
         "threshold_fraction": float(threshold_fraction),
         "min_component_voxels": int(min_component_voxels),
+        "true_uses_full_source_blobs": true_sources is not None,
         "true_components": true_components,
         "reconstructed_components": reconstructed_components,
         "true_component_count": int(len(true_components)),
@@ -387,10 +482,12 @@ def print_activity_component_matching_summary(summary):
     print()
     print("Activity component matching metrics:")
     print(
-        " threshold/min voxels:      "
+        " recon threshold/min voxels:"
         f"{100.0 * summary['threshold_fraction']:.1f}% of each max / "
         f"{summary['min_component_voxels']}"
     )
+    if summary.get("true_uses_full_source_blobs", False):
+        print(" true blobs:               full generated source blobs, no threshold")
     print(
         " blobs true/recon/matched:  "
         f"{summary['true_component_count']} / "
