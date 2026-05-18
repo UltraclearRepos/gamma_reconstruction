@@ -55,6 +55,78 @@ def plot_detector_forward_directions(
     )
 
 
+def plot_search_box_outline(
+    ax,
+    dataset,
+    color="black",
+    alpha=0.35,
+    linewidth=0.9,
+    max_measurements=10,
+):
+    """Draw sampled detector-relative search boxes used to select voxels."""
+    required_keys = (
+        "geometry",
+        "rotations",
+        "translations",
+        "search_start_distance",
+        "search_stop_distance",
+        "search_width",
+        "search_height",
+    )
+    if any(key not in dataset for key in required_keys):
+        return None
+
+    rotations = np.asarray(dataset["rotations"], dtype=float)
+    translations = np.asarray(dataset["translations"], dtype=float)
+    start_distance = float(dataset["search_start_distance"])
+    stop_distance = float(dataset["search_stop_distance"])
+    half_width = 0.5 * float(dataset["search_width"])
+    half_height = 0.5 * float(dataset["search_height"])
+
+    if len(translations) == 0:
+        return None
+
+    num_to_draw = min(int(max_measurements), len(translations))
+    measurement_indices = np.unique(
+        np.linspace(0, len(translations) - 1, num_to_draw, dtype=int)
+    )
+    outline_points = []
+    local_corners = np.array(
+        [
+            [x, y, z]
+            for x in (-half_width, half_width)
+            for y in (-half_height, half_height)
+            for z in (start_distance, stop_distance)
+        ],
+        dtype=float,
+    )
+    edges = [
+        (0, 1), (0, 2), (1, 3), (2, 3),
+        (4, 5), (4, 6), (5, 7), (6, 7),
+        (0, 4), (1, 5), (2, 6), (3, 7),
+    ]
+
+    for draw_index, measurement_index in enumerate(measurement_indices):
+        rotation = rotations[measurement_index]
+        detector_position = translations[measurement_index]
+        world_corners = detector_position[np.newaxis, :] + local_corners @ rotation.T
+        for edge_index, (start, end) in enumerate(edges):
+            ax.plot(
+                world_corners[[start, end], 0],
+                world_corners[[start, end], 1],
+                world_corners[[start, end], 2],
+                color=color,
+                linestyle="--",
+                linewidth=linewidth,
+                alpha=alpha,
+                label="search box outline" if draw_index == 0 and edge_index == 0 else None,
+            )
+
+        outline_points.append(world_corners)
+
+    return np.vstack(outline_points) if outline_points else None
+
+
 def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limits=None):
     """Show detector trajectory and all true point sources in world coordinates."""
     import matplotlib.pyplot as plt
@@ -91,7 +163,7 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limit
         rotations=rotations,
         forward_local=forward_local,
         stride=stride,
-        length=12.0,
+        length=6.0,
         color="tab:green",
         alpha=0.70,
         linewidth=1.0,
@@ -137,11 +209,240 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limit
     finalize_figure(fig, save_path=save_path, show=show)
 
 
+def voxelize_true_source_activity(candidate_positions, true_sources):
+    """
+    Project generated source activity onto reconstruction voxels for plotting.
+
+    This uses the actual source components stored in the generated dataset.
+    Each component is assigned to its nearest reconstruction voxel.
+    """
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    true_activity = np.zeros(len(candidate_positions), dtype=float)
+    if len(candidate_positions) == 0:
+        return true_activity
+
+    for source in true_sources:
+        components = source.get("components")
+        if components is None:
+            components = [
+                {
+                    "position": source["position"],
+                    "strength": source.get("strength", source.get("strength_per_second", 0.0)),
+                }
+            ]
+
+        component_positions = np.asarray(
+            [component["position"] for component in components],
+            dtype=float,
+        )
+        component_strengths = np.asarray(
+            [component["strength"] for component in components],
+            dtype=float,
+        )
+        if len(component_positions) == 0:
+            continue
+
+        squared_distances = np.sum(
+            (component_positions[:, np.newaxis, :] - candidate_positions[np.newaxis, :, :]) ** 2,
+            axis=2,
+        )
+        nearest_indices = np.argmin(squared_distances, axis=1)
+        np.add.at(true_activity, nearest_indices, component_strengths)
+
+    return true_activity
+
+
+def visualize_true_voxel_activity(
+    dataset,
+    candidate_positions,
+    true_activity,
+    save_path=None,
+    show=False,
+    max_voxels=300,
+    axis_limits=None,
+):
+    """Show generated ground-truth activity projected onto reconstruction voxels."""
+    import matplotlib.pyplot as plt
+
+    translations = dataset["translations"]
+    rotations = dataset.get("rotations")
+    forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
+    true_source_positions = np.array([source["position"] for source in dataset["true_sources"]])
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    true_activity = np.asarray(true_activity, dtype=float)
+
+    fig = plt.figure(figsize=(8, 7))
+    ax = fig.add_subplot(111, projection="3d")
+    points_for_scale = [translations, true_source_positions]
+
+    if len(true_activity) > 0 and np.max(true_activity) > 0.0:
+        active_indices = np.flatnonzero(true_activity > 0.0)
+        if len(active_indices) > max_voxels:
+            active_indices = active_indices[np.argsort(true_activity[active_indices])[-max_voxels:]]
+
+        voxel_positions = candidate_positions[active_indices]
+        voxel_activity = true_activity[active_indices]
+        normalized_activity = np.clip(
+            voxel_activity / max(float(np.max(voxel_activity)), EPS),
+            0.0,
+            1.0,
+        )
+        voxel_sizes = 12.0 + 70.0 * normalized_activity
+
+        scatter = ax.scatter(
+            voxel_positions[:, 0],
+            voxel_positions[:, 1],
+            voxel_positions[:, 2],
+            c=np.log1p(voxel_activity),
+            s=voxel_sizes,
+            cmap="viridis",
+            alpha=0.42,
+            depthshade=False,
+            label="true voxel activity",
+        )
+        colorbar = fig.colorbar(scatter, ax=ax, shrink=0.75)
+        colorbar.set_label("log(1 + true activity)")
+        points_for_scale.append(voxel_positions)
+
+    ax.plot(
+        translations[:, 0],
+        translations[:, 1],
+        translations[:, 2],
+        color="tab:blue",
+        linewidth=2.4,
+        alpha=0.95,
+        label="detector trajectory",
+    )
+    plot_detector_forward_directions(
+        ax=ax,
+        translations=translations,
+        rotations=rotations,
+        forward_local=forward_local,
+        stride=max(1, len(translations) // 18),
+        length=6.0,
+        color="tab:blue",
+        alpha=0.65,
+        linewidth=1.0,
+    )
+    search_outline_points = plot_search_box_outline(ax, dataset)
+    if search_outline_points is not None:
+        points_for_scale.append(search_outline_points)
+
+    if axis_limits is None:
+        set_equal_3d_axes(ax, np.vstack(points_for_scale))
+    else:
+        set_3d_axis_limits(ax, axis_limits)
+
+    ax.set_title("Generated true activity on reconstruction voxels")
+    ax.set_xlabel("x world [cm]")
+    ax.set_ylabel("y world [cm]")
+    ax.set_zlabel("z world [cm]")
+    ax.legend(loc="upper right")
+
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def visualize_activity_map_comparison(
+    dataset,
+    candidate_positions,
+    true_activity,
+    reconstructed_activity,
+    save_path=None,
+    show=False,
+    max_voxels=300,
+    axis_limits=None,
+):
+    """Show true and reconstructed voxel activity maps side by side."""
+    import matplotlib.pyplot as plt
+
+    translations = dataset["translations"]
+    true_source_positions = np.array([source["position"] for source in dataset["true_sources"]])
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    true_activity = np.asarray(true_activity, dtype=float)
+    reconstructed_activity = np.asarray(reconstructed_activity, dtype=float)
+
+    fig = plt.figure(figsize=(15, 7))
+    axes = [
+        fig.add_subplot(121, projection="3d"),
+        fig.add_subplot(122, projection="3d"),
+    ]
+
+    def plot_activity_panel(ax, activity, title, cmap, label, show_search_bounds=False):
+        points_for_scale = [translations, true_source_positions]
+        if len(activity) > 0 and np.max(activity) > 0.0:
+            active_indices = np.flatnonzero(activity > 0.0)
+            if len(active_indices) > max_voxels:
+                active_indices = active_indices[np.argsort(activity[active_indices])[-max_voxels:]]
+            voxel_positions = candidate_positions[active_indices]
+            voxel_activity = activity[active_indices]
+            normalized_activity = np.clip(
+                voxel_activity / max(float(np.max(voxel_activity)), EPS),
+                0.0,
+                1.0,
+            )
+            voxel_sizes = 10.0 + 65.0 * normalized_activity
+            scatter = ax.scatter(
+                voxel_positions[:, 0],
+                voxel_positions[:, 1],
+                voxel_positions[:, 2],
+                c=np.log1p(voxel_activity),
+                s=voxel_sizes,
+                cmap=cmap,
+                alpha=0.42,
+                depthshade=False,
+                label=label,
+            )
+            colorbar = fig.colorbar(scatter, ax=ax, shrink=0.70)
+            colorbar.set_label("log(1 + activity)")
+            points_for_scale.append(voxel_positions)
+
+        ax.plot(
+            translations[:, 0],
+            translations[:, 1],
+            translations[:, 2],
+            color="tab:blue",
+            linewidth=1.8,
+            alpha=0.85,
+            label="detector trajectory",
+        )
+        if show_search_bounds:
+            search_outline_points = plot_search_box_outline(ax, dataset)
+            if search_outline_points is not None:
+                points_for_scale.append(search_outline_points)
+        if axis_limits is None:
+            set_equal_3d_axes(ax, np.vstack(points_for_scale))
+        else:
+            set_3d_axis_limits(ax, axis_limits)
+        ax.set_title(title)
+        ax.set_xlabel("x world [cm]")
+        ax.set_ylabel("y world [cm]")
+        ax.set_zlabel("z world [cm]")
+        ax.legend(loc="upper right")
+
+    plot_activity_panel(
+        axes[0],
+        true_activity,
+        "True activity on reconstruction voxels",
+        "viridis",
+        "true activity",
+        show_search_bounds=True,
+    )
+    plot_activity_panel(
+        axes[1],
+        reconstructed_activity,
+        "Reconstructed activity",
+        "inferno",
+        "reconstructed activity",
+    )
+
+    fig.suptitle("True vs reconstructed activity maps")
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
 def visualize_mlem_activity(
     dataset,
     candidate_positions,
     activity,
-    estimated_sources=None,
     used_measurements=None,
     update_start=None,
     update_end=None,
@@ -163,7 +464,6 @@ def visualize_mlem_activity(
     true_source_positions = np.array([source["position"] for source in dataset["true_sources"]])
     activity = np.asarray(activity, dtype=float)
     candidate_positions = np.asarray(candidate_positions, dtype=float)
-    estimated_sources = estimated_sources or []
 
     fig = plt.figure(figsize=(8, 7))
     ax = fig.add_subplot(111, projection="3d")
@@ -225,7 +525,7 @@ def visualize_mlem_activity(
         rotations=rotations,
         forward_local=forward_local,
         stride=max(1, len(translations) // 18),
-            length=11.0 if highlight_used_trajectory else 12.0,
+            length=5.5 if highlight_used_trajectory else 6.0,
         color=full_trajectory_color,
         alpha=0.25 if highlight_used_trajectory else 0.70,
         linewidth=0.9 if highlight_used_trajectory else 1.1,
@@ -250,7 +550,7 @@ def visualize_mlem_activity(
             rotations=rotations[used_slice] if rotations is not None else None,
             forward_local=forward_local,
             stride=max(1, used_end // 18),
-            length=11.0,
+            length=5.5,
             color="tab:blue",
             alpha=0.70,
             linewidth=1.1,
@@ -276,40 +576,11 @@ def visualize_mlem_activity(
                 rotations=rotations[start:end] if rotations is not None else None,
                 forward_local=forward_local,
                 stride=max(1, (end - start) // 8),
-                length=12.0,
+                length=6.0,
                 color="tab:orange",
                 alpha=0.90,
                 linewidth=1.2,
             )
-
-    ax.scatter(
-        true_source_positions[:, 0],
-        true_source_positions[:, 1],
-        true_source_positions[:, 2],
-        color="lime",
-        s=230,
-        marker="*",
-        edgecolor="black",
-        linewidth=0.8,
-        depthshade=False,
-        label="true sources",
-    )
-
-    if estimated_sources:
-        estimated_positions = np.array([source["position"] for source in estimated_sources])
-        ax.scatter(
-            estimated_positions[:, 0],
-            estimated_positions[:, 1],
-            estimated_positions[:, 2],
-            color="cyan",
-            s=130,
-            marker="X",
-            edgecolor="black",
-            linewidth=0.8,
-            depthshade=False,
-            label="estimated peaks",
-        )
-        points_for_scale.append(estimated_positions)
 
     if axis_limits is None:
         set_equal_3d_axes(ax, np.vstack(points_for_scale))
@@ -579,119 +850,6 @@ def visualize_detector_response_curves(
     ax.set_ylim(bottom=0.0)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best")
-
-    finalize_figure(fig, save_path=save_path, show=show)
-
-
-def visualize_streaming_best_position(history, dataset, save_path=None, show=False):
-    """Plot best estimated source position after each streaming update."""
-    import matplotlib.pyplot as plt
-
-    used_measurements = []
-    x_values = []
-    y_values = []
-    z_values = []
-
-    for item in history:
-        if "best_position" not in item:
-            continue
-        position = np.asarray(item["best_position"], dtype=float)
-        if position.shape != (3,):
-            continue
-
-        used_measurements.append(float(item.get("used_measurements", len(used_measurements) + 1)))
-        x_values.append(float(position[0]))
-        y_values.append(float(position[1]))
-        z_values.append(float(position[2]))
-
-    if not used_measurements:
-        return
-
-    true_positions = np.array([source["position"] for source in dataset["true_sources"]])
-    true_centroid = np.mean(true_positions, axis=0)
-
-    fig, axes = plt.subplots(3, 1, figsize=(7, 8), sharex=True)
-    coordinate_series = [
-        ("x", x_values, true_centroid[0], "tab:red"),
-        ("y", y_values, true_centroid[1], "tab:green"),
-        ("z", z_values, true_centroid[2], "tab:blue"),
-    ]
-
-    for axis, (label, values, true_value, color) in zip(axes, coordinate_series):
-        axis.plot(used_measurements, values, marker="o", linewidth=1.7, color=color, label=f"estimated {label}")
-        axis.axhline(true_value, linestyle="--", color="black", linewidth=1.0, label=f"true centroid {label}")
-        axis.set_ylabel(f"{label} [cm]")
-        axis.grid(True, alpha=0.3)
-        axis.legend(loc="best")
-
-    axes[-1].set_xlabel("used measurements")
-    fig.suptitle("Streaming estimate vs number of measurements")
-    fig.tight_layout(rect=[0, 0, 1, 0.97])
-
-    finalize_figure(fig, save_path=save_path, show=show)
-
-
-def visualize_streaming_localization_metrics(history, save_path=None, show=False):
-    """Plot selected voxel to true source distance metrics after each update."""
-    import matplotlib.pyplot as plt
-
-    used_measurements = []
-    mean_distances = []
-    weighted_mean_distances = []
-    p90_distances = []
-    selected_voxel_counts = []
-
-    for item in history:
-        metrics = item["localization_metrics"]
-        used_measurements.append(float(item["used_measurements"]))
-        mean_distances.append(float(metrics["all_source_distance_mean"]))
-        weighted_mean_distances.append(float(metrics["all_source_distance_weighted_mean"]))
-        p90_distances.append(float(metrics["all_source_distance_p90"]))
-        selected_voxel_counts.append(int(metrics["selected_voxel_count"]))
-
-    fig, axes = plt.subplots(2, 1, figsize=(8, 6), sharex=True, height_ratios=[3, 1])
-
-    axes[0].plot(
-        used_measurements,
-        mean_distances,
-        marker="o",
-        linewidth=1.8,
-        color="tab:blue",
-        label="mean",
-    )
-    axes[0].plot(
-        used_measurements,
-        weighted_mean_distances,
-        marker="o",
-        linewidth=1.8,
-        color="tab:orange",
-        label="weighted mean",
-    )
-    axes[0].plot(
-        used_measurements,
-        p90_distances,
-        marker="o",
-        linewidth=1.8,
-        color="tab:green",
-        label="p90",
-    )
-    axes[0].set_title("Streaming localization metric")
-    axes[0].set_ylabel("voxel-source distance [cm]")
-    axes[0].grid(True, alpha=0.3)
-    axes[0].legend(loc="best")
-
-    axes[1].bar(
-        used_measurements,
-        selected_voxel_counts,
-        width=1.4,
-        color="tab:gray",
-        alpha=0.75,
-    )
-    axes[1].set_xlabel("used measurements")
-    axes[1].set_ylabel("voxels")
-    axes[1].grid(True, axis="y", alpha=0.3)
-
-    fig.tight_layout()
 
     finalize_figure(fig, save_path=save_path, show=show)
 

@@ -4,7 +4,7 @@ Reconstruction algorithms for multi-point source experiments.
 
 import numpy as np
 
-from common.geometry import EPS, points_in_detector_window
+from common.geometry import EPS, points_in_detector_box
 from reconstruction_objective import (
     build_system_matrix,
     poisson_negative_log_likelihood,
@@ -26,8 +26,8 @@ def reconstruct_sources(
     search_max,
     search_start_distance,
     search_stop_distance,
-    search_start_radius,
-    search_stop_radius,
+    search_width,
+    search_height,
     assumed_angular_peak_angle_deg=0.0,
     assumed_angular_width_deg=None,
     assumed_skin_thickness_cm=0.0,
@@ -38,9 +38,6 @@ def reconstruct_sources(
     grid_size=11,
     num_iterations=40,
     history_interval=5,
-    max_sources=3,
-    min_source_distance=8.0,
-    peak_centroid_radius=0.0,
 ):
     """
     Run one multi-source reconstruction method using a plain if/elif dispatcher.
@@ -68,14 +65,11 @@ def reconstruct_sources(
             search_max=search_max,
             search_start_distance=search_start_distance,
             search_stop_distance=search_stop_distance,
-            search_start_radius=search_start_radius,
-            search_stop_radius=search_stop_radius,
+            search_width=search_width,
+            search_height=search_height,
             grid_size=grid_size,
             num_iterations=num_iterations,
             history_interval=history_interval,
-            max_sources=max_sources,
-            min_source_distance=min_source_distance,
-            peak_centroid_radius=peak_centroid_radius,
         )
 
     raise ValueError(
@@ -93,10 +87,10 @@ def make_candidate_grid(
     translations,
     search_start_distance,
     search_stop_distance,
-    search_start_radius,
-    search_stop_radius,
+    search_width,
+    search_height,
 ):
-    """Create candidate source positions inside the detector-facing cones."""
+    """Create candidate source positions inside the detector-facing rectangular boxes."""
     search_min = np.array(search_min, dtype=float)
     search_max = np.array(search_max, dtype=float)
 
@@ -111,80 +105,20 @@ def make_candidate_grid(
                 candidate_positions.append(np.array([x, y, z], dtype=float))
 
     candidate_positions = np.array(candidate_positions, dtype=float)
-    inside = points_in_detector_window(
+    inside = points_in_detector_box(
         points=candidate_positions,
         geometry=geometry,
         rotations=rotations,
         translations=translations,
         search_start_distance=search_start_distance,
         search_stop_distance=search_stop_distance,
-        search_start_radius=search_start_radius,
-        search_stop_radius=search_stop_radius,
+        search_width=search_width,
+        search_height=search_height,
     )
     candidate_positions = candidate_positions[inside]
     if len(candidate_positions) == 0:
-        raise ValueError("No candidate voxels are inside the detector search cones.")
+        raise ValueError("No candidate voxels are inside the detector search boxes.")
     return candidate_positions
-
-
-def pick_activity_peaks(
-    candidate_positions,
-    activity,
-    max_sources=3,
-    min_distance=8.0,
-    centroid_radius=0.0,
-):
-    """
-    Pick strongest separated activity peaks from a voxel activity map.
-
-    This is only a simple peak picker for summarizing ML-EM output.
-    """
-    estimated_sources = []
-    sorted_indices = np.argsort(activity)[::-1]
-    centroid_radius = float(centroid_radius)
-    if centroid_radius < 0.0:
-        raise ValueError("centroid_radius must be >= 0.")
-
-    for voxel_index in sorted_indices:
-        if activity[voxel_index] <= 0.0:
-            break
-
-        peak_position = candidate_positions[voxel_index]
-        position = peak_position
-        source_activity = float(activity[voxel_index])
-        if centroid_radius > 0.0:
-            distances_to_peak = np.linalg.norm(candidate_positions - peak_position, axis=1)
-            local_mask = (distances_to_peak <= centroid_radius) & (activity > 0.0)
-            local_activity = activity[local_mask]
-            if len(local_activity) > 0 and np.sum(local_activity) > EPS:
-                position = np.average(
-                    candidate_positions[local_mask],
-                    axis=0,
-                    weights=local_activity,
-                )
-                source_activity = float(np.sum(local_activity))
-
-        far_enough = True
-        for source in estimated_sources:
-            distance = np.linalg.norm(position - source["position"])
-            if distance < min_distance:
-                far_enough = False
-                break
-
-        if far_enough:
-            estimated_sources.append(
-                {
-                    "position": position.copy(),
-                    "activity": source_activity,
-                    "voxel_index": int(voxel_index),
-                    "peak_position": peak_position.copy(),
-                }
-            )
-
-        if len(estimated_sources) >= max_sources:
-            break
-
-    return estimated_sources
 
 
 def mlem_reconstruction(
@@ -201,8 +135,8 @@ def mlem_reconstruction(
     search_max,
     search_start_distance,
     search_stop_distance,
-    search_start_radius,
-    search_stop_radius,
+    search_width,
+    search_height,
     assumed_angular_peak_angle_deg=0.0,
     assumed_angular_width_deg=None,
     assumed_skin_thickness_cm=0.0,
@@ -212,9 +146,6 @@ def mlem_reconstruction(
     grid_size=11,
     num_iterations=40,
     history_interval=5,
-    max_sources=3,
-    min_source_distance=8.0,
-    peak_centroid_radius=0.0,
 ):
     """
     Reconstruct a voxel activity map with ML-EM.
@@ -222,8 +153,7 @@ def mlem_reconstruction(
     Model:
         counts ~= background + H @ activity
 
-    The returned estimated_sources are only a compact summary of the strongest
-    reconstructed voxels. The main ML-EM result is the full activity map.
+    The main ML-EM result is the full activity map.
     """
     candidate_positions = make_candidate_grid(
         search_min=search_min,
@@ -234,8 +164,8 @@ def mlem_reconstruction(
         translations=translations,
         search_start_distance=search_start_distance,
         search_stop_distance=search_stop_distance,
-        search_start_radius=search_start_radius,
-        search_stop_radius=search_stop_radius,
+        search_width=search_width,
+        search_height=search_height,
     )
     system_matrix = build_system_matrix(         # system_matrix is H: rows are flattened measurement/channel pairs, columns are voxels.
         candidate_positions=candidate_positions, # H[row, voxel] says how much one unit of activity in that voxel would add to that detector count for specific measurement and specific channel.
@@ -290,30 +220,19 @@ def mlem_reconstruction(
                 system_matrix=system_matrix,
                 activity=activity,
             )
-            best_index = int(np.argmax(activity))
             history.append(
                 {
                     "iteration": float(iteration),
                     "score": poisson_negative_log_likelihood(counts_flat, predicted_counts),
                     "total_activity": float(np.sum(activity)),
-                    "max_activity": float(activity[best_index]),
-                    "best_position": candidate_positions[best_index].copy(),
+                    "max_activity": float(np.max(activity)),
                 }
             )
             activity_history.append(activity.copy())
-
-    estimated_sources = pick_activity_peaks(
-        candidate_positions=candidate_positions,
-        activity=activity,
-        max_sources=max_sources,
-        min_distance=min_source_distance,
-        centroid_radius=peak_centroid_radius,
-    )
 
     return {
         "candidate_positions": candidate_positions,
         "activity": activity,
         "activity_history": [snapshot.copy() for snapshot in activity_history],
-        "estimated_sources": estimated_sources,
         "history": history,
     }

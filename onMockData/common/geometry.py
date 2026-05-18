@@ -263,6 +263,104 @@ def points_in_detector_window(
     return inside
 
 
+def derive_search_volume_from_detector_box(
+    geometry,
+    rotations,
+    translations,
+    search_start_distance,
+    search_stop_distance,
+    search_width,
+    search_height,
+):
+    """
+    Derive an axis-aligned search box from detector-relative rectangular windows.
+
+    For every measurement, the searched local detector box spans:
+        x: [-search_width / 2, search_width / 2]
+        y: [-search_height / 2, search_height / 2]
+        z: [search_start_distance, search_stop_distance]
+
+    Local +Z is the detector-forward axis.
+    """
+    start_distance = float(search_start_distance)
+    stop_distance = float(search_stop_distance)
+    width = float(search_width)
+    height = float(search_height)
+    half_width = 0.5 * width
+    half_height = 0.5 * height
+    if start_distance < 0.0:
+        raise ValueError("search_start_distance must be >= 0 cm.")
+    if stop_distance <= start_distance:
+        raise ValueError("search_stop_distance must be greater than search_start_distance.")
+    if width < 0.0:
+        raise ValueError("search_width must be >= 0 cm.")
+    if height < 0.0:
+        raise ValueError("search_height must be >= 0 cm.")
+
+    rotations = np.asarray(rotations, dtype=float)
+    translations = np.asarray(translations, dtype=float)
+    local_corners = np.array(
+        [
+            [x, y, z]
+            for x in (-half_width, half_width)
+            for y in (-half_height, half_height)
+            for z in (start_distance, stop_distance)
+        ],
+        dtype=float,
+    )
+    world_corners = (
+        translations[:, np.newaxis, :]
+        + np.einsum("mij,cj->mci", rotations, local_corners)
+    )
+    window_min = np.min(world_corners, axis=(0, 1))
+    window_max = np.max(world_corners, axis=(0, 1))
+
+    return {
+        "search_min": window_min,
+        "search_max": window_max,
+        "search_start_distance": start_distance,
+        "search_stop_distance": stop_distance,
+        "search_distance_window": stop_distance - start_distance,
+        "search_width": width,
+        "search_height": height,
+    }
+
+
+def points_in_detector_box(
+    points,
+    geometry,
+    rotations,
+    translations,
+    search_start_distance,
+    search_stop_distance,
+    search_width,
+    search_height,
+):
+    """Return a mask for points inside the union of detector-relative boxes."""
+    points = np.asarray(points, dtype=float)
+    rotations = np.asarray(rotations, dtype=float)
+    translations = np.asarray(translations, dtype=float)
+    start_distance = float(search_start_distance)
+    stop_distance = float(search_stop_distance)
+    width = float(search_width)
+    height = float(search_height)
+    half_width = 0.5 * width
+    half_height = 0.5 * height
+
+    inside = np.zeros(len(points), dtype=bool)
+    for measurement_index, rotation in enumerate(rotations):
+        local_points = (points - translations[measurement_index]) @ rotation
+        in_measurement = (
+            (local_points[:, 2] >= start_distance)
+            & (local_points[:, 2] <= stop_distance)
+            & (np.abs(local_points[:, 0]) <= half_width)
+            & (np.abs(local_points[:, 1]) <= half_height)
+        )
+        inside |= in_measurement
+
+    return inside
+
+
 def make_detector_trajectory(
     geometry,
     trajectory_center,

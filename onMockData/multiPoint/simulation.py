@@ -6,23 +6,40 @@ import numpy as np
 
 from common.forward_model import compute_detector_response
 from common.geometry import (
-    derive_search_volume_from_detector_window,
+    derive_search_volume_from_detector_box,
     EPS,
     make_detector_geometry,
     make_detector_trajectory,
 )
 
 
-def gaussian_source_components(position, strength, spread_cm):
+def gaussian_source_components(
+    position,
+    strength,
+    spread_cm,
+    component_spacing_cm=0.25,
+    edge_relative_activity=0.25,
+):
     """
-    Approximate a compact 3D Gaussian source by deterministic sub-sources.
+    Approximate a diffuse 3D Gaussian source by a dense deterministic cloud.
 
-    The returned components preserve total strength and approximate the requested
-    standard deviation along each axis. spread_cm == 0 keeps a point source.
+    The returned components are the source used by the forward model. They are
+    sampled on a fixed spatial grid, so smaller spread_cm makes a smaller blob
+    instead of packing the same number of points into a smaller volume.
+    spread_cm is treated as the visible blob radius: edge_relative_activity
+    controls how much activity remains at that radius compared with the center.
+    Their strengths sum to the requested total strength. spread_cm == 0 keeps a
+    point source.
     """
     position = np.asarray(position, dtype=float)
     strength = float(strength)
     spread_cm = float(spread_cm)
+    component_spacing_cm = float(component_spacing_cm)
+    if component_spacing_cm <= EPS:
+        raise ValueError("component_spacing_cm must be > 0.")
+    edge_relative_activity = float(edge_relative_activity)
+    if not 0.0 < edge_relative_activity < 1.0:
+        raise ValueError("edge_relative_activity must be between 0 and 1.")
     if spread_cm <= EPS:
         return [
             {
@@ -32,17 +49,30 @@ def gaussian_source_components(position, strength, spread_cm):
             }
         ]
 
-    radius = np.sqrt(6.0) * spread_cm
-    offsets = [
-        np.array([0.0, 0.0, 0.0], dtype=float),
-        np.array([radius, 0.0, 0.0], dtype=float),
-        np.array([-radius, 0.0, 0.0], dtype=float),
-        np.array([0.0, radius, 0.0], dtype=float),
-        np.array([0.0, -radius, 0.0], dtype=float),
-        np.array([0.0, 0.0, radius], dtype=float),
-        np.array([0.0, 0.0, -radius], dtype=float),
-    ]
-    weights = [0.5, *(6 * [1.0 / 12.0])]
+    radius_cm = spread_cm
+    sigma_cm = radius_cm / np.sqrt(-2.0 * np.log(edge_relative_activity))
+    max_offset_steps = int(np.ceil(radius_cm / component_spacing_cm))
+    axis_offsets = (
+        np.arange(-max_offset_steps, max_offset_steps + 1, dtype=float)
+        * component_spacing_cm
+    )
+    axis_offsets = axis_offsets[np.abs(axis_offsets) <= radius_cm + EPS]
+
+    offsets = []
+    weights = []
+    for x_offset in axis_offsets:
+        for y_offset in axis_offsets:
+            for z_offset in axis_offsets:
+                offset = np.array([x_offset, y_offset, z_offset], dtype=float)
+                radius_squared = float(np.dot(offset, offset))
+                if radius_squared > radius_cm**2:
+                    continue
+                normalized_radius_squared = radius_squared / max(sigma_cm**2, EPS)
+                offsets.append(offset)
+                weights.append(float(np.exp(-0.5 * normalized_radius_squared)))
+
+    weights = np.asarray(weights, dtype=float)
+    weights /= max(float(np.sum(weights)), EPS)
     return [
         {
             "position": position + offset,
@@ -120,8 +150,8 @@ def generate_synthetic_dataset(
     trajectory_center,
     search_start_distance,
     search_stop_distance,
-    search_start_radius,
-    search_stop_radius,
+    search_width,
+    search_height,
     trajectory_mode,
     angular_jitter_deg,
     lateral_span,
@@ -244,14 +274,14 @@ def generate_synthetic_dataset(
         fixed_sweep_z_range_deg=fixed_sweep_z_range_deg,
         fixed_sweep_x_range_deg=fixed_sweep_x_range_deg,
     )
-    search_volume = derive_search_volume_from_detector_window(
+    search_volume = derive_search_volume_from_detector_box(
         geometry=geometry,
         rotations=rotations,
         translations=translations,
         search_start_distance=search_start_distance,
         search_stop_distance=search_stop_distance,
-        search_start_radius=search_start_radius,
-        search_stop_radius=search_stop_radius,
+        search_width=search_width,
+        search_height=search_height,
     )
 
     mean_counts = expected_counts_multi_source(
@@ -286,8 +316,8 @@ def generate_synthetic_dataset(
         "search_start_distance": search_volume["search_start_distance"],
         "search_stop_distance": search_volume["search_stop_distance"],
         "search_distance_window": search_volume["search_distance_window"],
-        "search_start_radius": search_volume["search_start_radius"],
-        "search_stop_radius": search_volume["search_stop_radius"],
+        "search_width": search_volume["search_width"],
+        "search_height": search_volume["search_height"],
         "true_backgrounds": true_backgrounds,
         "true_channel_scales": true_channel_scales,
         "generation_k": generation_k,

@@ -21,11 +21,7 @@ from visualization import (
     visualize_history_score,
     visualize_mlem_activity,
     visualize_multi_source_scene,
-    visualize_streaming_best_position,
-    visualize_streaming_localization_metrics,
 )
-from reconstruction_algorithms import pick_activity_peaks
-from metrics import print_activity_localization_summary
 
 
 def print_dataset_summary(dataset):
@@ -83,40 +79,13 @@ def print_streaming_summary(result):
     print()
     print("Streaming updates:")
     for item in result["stream_history"]:
-        best_position = np.round(item["best_position"], 4)
         print(
             " "
             f"used_measurements={int(item['used_measurements'])}, "
-            f"best_position={best_position}, "
-            f"best_activity={item['best_activity']:.2f}, "
             f"total_activity={item['total_activity']:.2f}, "
+            f"max_activity={item['max_activity']:.2f}, "
             f"signal_scale={item['signal_normalization_scale']:.3f}, "
             f"score={item['score']:.2f}"
-        )
-
-    print()
-    print("Final estimated activity peaks:")
-    for index, source in enumerate(result["estimated_sources"], start=1):
-        print(
-            " "
-            f"P{index}: position={np.round(source['position'], 4)}, "
-            f"activity={source['activity']:.2f}"
-        )
-
-
-def print_streaming_localization_metrics(history):
-    """Print localization metrics saved after each streaming update."""
-    print()
-    print("Localization metrics after each update:")
-    for item in history:
-        metrics = item["localization_metrics"]
-        print(
-            " "
-            f"used_measurements={int(item['used_measurements'])}, "
-            f"selected_voxels={metrics['selected_voxel_count']}, "
-            f"voxel_source_mean={metrics['all_source_distance_mean']:.4f} cm, "
-            f"voxel_source_wmean={metrics['all_source_distance_weighted_mean']:.4f} cm, "
-            f"voxel_source_p90={metrics['all_source_distance_p90']:.4f} cm"
         )
 
 
@@ -142,21 +111,7 @@ def to_csv_value(value):
 
 
 def append_streaming_run_csv(csv_path, parameters, final_history_item):
-    """Append run parameters and final localization metrics to a growing CSV."""
-    metrics = final_history_item["localization_metrics"]
-    metric_keys = [
-        "selected_voxel_count",
-        "total_voxel_count",
-        "max_activity",
-        "activity_threshold",
-        "selected_activity_fraction",
-        "all_source_distance_min",
-        "all_source_distance_mean",
-        "all_source_distance_weighted_mean",
-        "all_source_distance_median",
-        "all_source_distance_p90",
-        "all_source_distance_max",
-    ]
+    """Append run parameters and final streaming map summary to a growing CSV."""
 
     row = {
         "run_timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -165,18 +120,12 @@ def append_streaming_run_csv(csv_path, parameters, final_history_item):
         "final_score": float(final_history_item["score"]),
         "final_total_activity": float(final_history_item["total_activity"]),
         "final_max_activity": float(final_history_item["max_activity"]),
-        "final_best_position": to_csv_value(final_history_item["best_position"]),
-        "final_best_activity": float(final_history_item["best_activity"]),
         "final_observed_signal": float(final_history_item["observed_signal"]),
         "final_predicted_signal": float(final_history_item["predicted_signal"]),
         "final_signal_normalization_scale": float(final_history_item["signal_normalization_scale"]),
-        "metric_selection": metrics["selection"],
-        "metric_per_source_distances": to_csv_value(metrics["per_source_distances"]),
     }
     for key, value in parameters.items():
         row[f"param_{key.lower()}"] = to_csv_value(value)
-    for key in metric_keys:
-        row[f"metric_{key}"] = to_csv_value(metrics[key])
 
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = list(row.keys())
@@ -225,8 +174,8 @@ def main():
     # Reconstruction volume.
     SEARCH_START_DISTANCE = 10.0  # Start searching this far from each detector channel along detector forward axis [cm].
     SEARCH_STOP_DISTANCE = 120.0  # Stop searching this far from each detector channel; window length = stop - start [cm].
-    SEARCH_START_RADIUS = 5.0  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
-    SEARCH_STOP_RADIUS = 45.0  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
+    SEARCH_WIDTH = 45.0  # Full width of the detector-relative rectangular search box [cm].
+    SEARCH_HEIGHT = 36.0  # Full height of the detector-relative rectangular search box [cm].
     GRID_SIZE = 13
 
     # Mock detector trajectory.
@@ -259,15 +208,10 @@ def main():
     INNER_ITERATIONS_PER_UPDATE = 50
     MEASUREMENTS_PER_UPDATE = 2
     SPARSITY_LAMBDA = 0.0  # L1-like activity penalty; increase to suppress diffuse weak voxels.
-    MAX_SOURCES_TO_REPORT = 1
-    MIN_SOURCE_DISTANCE = 8.0
     AVOID_DETECTOR_STRENGTH = 0.2  # 0 disables; how much distance is penalized
     AVOID_DETECTOR_DECAY_PER_UPDATE = 0  # penalty strength is multiplied by this after each update; bigger = faster decay
     ACTIVITY_DECAY = 0.9  # 1.0 disables; try 0.95..0.995 to "forget" old spikes
     NORMALIZE_ACTIVITY_TO_SIGNAL = True  # Rescale activity so predicted source counts match observed counts above background.
-
-    # Localization metric.
-    ACTIVITY_MAX_RELATIVE_DROP = 0.5
 
     # Visualization output.
     PRINT_GENERATED_COUNTS_TABLE = True
@@ -297,8 +241,8 @@ def main():
         trajectory_center=TRAJECTORY_CENTER,
         search_start_distance=SEARCH_START_DISTANCE,
         search_stop_distance=SEARCH_STOP_DISTANCE,
-        search_start_radius=SEARCH_START_RADIUS,
-        search_stop_radius=SEARCH_STOP_RADIUS,
+        search_width=SEARCH_WIDTH,
+        search_height=SEARCH_HEIGHT,
         trajectory_mode=TRAJECTORY_MODE,
         angular_jitter_deg=ANGULAR_JITTER_DEG,
         lateral_span=LATERAL_SPAN,
@@ -341,26 +285,21 @@ def main():
         search_max=dataset["search_max"],
         search_start_distance=dataset["search_start_distance"],
         search_stop_distance=dataset["search_stop_distance"],
-        search_start_radius=dataset["search_start_radius"],
-        search_stop_radius=dataset["search_stop_radius"],
+        search_width=dataset["search_width"],
+        search_height=dataset["search_height"],
         true_sources=dataset["true_sources"],
         method=STREAMING_METHOD,
         grid_size=GRID_SIZE,
         inner_iterations_per_update=INNER_ITERATIONS_PER_UPDATE,
         measurements_per_update=MEASUREMENTS_PER_UPDATE,
         sparsity_lambda=SPARSITY_LAMBDA,
-        max_sources=MAX_SOURCES_TO_REPORT,
-        min_source_distance=MIN_SOURCE_DISTANCE,
         relaxation=RELAXATION,
         avoid_detector_strength=AVOID_DETECTOR_STRENGTH,
         avoid_detector_decay_per_update=AVOID_DETECTOR_DECAY_PER_UPDATE,
         activity_decay=ACTIVITY_DECAY,
         normalize_activity_to_signal=NORMALIZE_ACTIVITY_TO_SIGNAL,
-        localization_max_relative_drop=ACTIVITY_MAX_RELATIVE_DROP,
     )
     print_streaming_summary(result)
-    print_streaming_localization_metrics(result["stream_history"])
-    print_activity_localization_summary(result["stream_history"][-1]["localization_metrics"])
     max_activity_for_visualization = max(
         float(np.max(activity_snapshot))
         for activity_snapshot in result["activity_history"]
@@ -383,8 +322,8 @@ def main():
         "GENERATION_DISTANCE_POWER": GENERATION_DISTANCE_POWER,
         "SEARCH_START_DISTANCE": SEARCH_START_DISTANCE,
         "SEARCH_STOP_DISTANCE": SEARCH_STOP_DISTANCE,
-        "SEARCH_START_RADIUS": SEARCH_START_RADIUS,
-        "SEARCH_STOP_RADIUS": SEARCH_STOP_RADIUS,
+        "SEARCH_WIDTH": SEARCH_WIDTH,
+        "SEARCH_HEIGHT": SEARCH_HEIGHT,
         "GRID_SIZE": GRID_SIZE,
         "TRAJECTORY_MODE": TRAJECTORY_MODE,
         "ORIENTATION_MODE": ORIENTATION_MODE,
@@ -411,13 +350,10 @@ def main():
         "INNER_ITERATIONS_PER_UPDATE": INNER_ITERATIONS_PER_UPDATE,
         "MEASUREMENTS_PER_UPDATE": MEASUREMENTS_PER_UPDATE,
         "SPARSITY_LAMBDA": SPARSITY_LAMBDA,
-        "MAX_SOURCES_TO_REPORT": MAX_SOURCES_TO_REPORT,
-        "MIN_SOURCE_DISTANCE": MIN_SOURCE_DISTANCE,
         "AVOID_DETECTOR_STRENGTH": AVOID_DETECTOR_STRENGTH,
         "AVOID_DETECTOR_DECAY_PER_UPDATE": AVOID_DETECTOR_DECAY_PER_UPDATE,
         "ACTIVITY_DECAY": ACTIVITY_DECAY,
         "NORMALIZE_ACTIVITY_TO_SIGNAL": NORMALIZE_ACTIVITY_TO_SIGNAL,
-        "ACTIVITY_MAX_RELATIVE_DROP": ACTIVITY_MAX_RELATIVE_DROP,
         "PRINT_GENERATED_COUNTS_TABLE": PRINT_GENERATED_COUNTS_TABLE,
         "UPDATE_FRAME_MAX_VOXELS": UPDATE_FRAME_MAX_VOXELS,
         "GIF_FPS": GIF_FPS,
@@ -442,7 +378,6 @@ def main():
         dataset,
         candidate_positions=result["candidate_positions"],
         activity=result["activity"],
-        estimated_sources=result["estimated_sources"],
         used_measurements=len(dataset["translations"]),
         save_path=output_dir / "streaming_mlem_activity_reconstruction.png",
         show=False,
@@ -455,17 +390,6 @@ def main():
         save_path=output_dir / "streaming_mlem_score_history.png",
         show=False,
     )
-    visualize_streaming_best_position(
-        result["stream_history"],
-        dataset=dataset,
-        save_path=output_dir / "streaming_best_position_history.png",
-        show=False,
-    )
-    visualize_streaming_localization_metrics(
-        result["stream_history"],
-        save_path=output_dir / "streaming_localization_metric_history.png",
-        show=False,
-    )
 
     previous_used_measurements = 0
     for update_index, (activity_snapshot, history_item) in enumerate(
@@ -473,17 +397,10 @@ def main():
         start=1,
     ):
         used_measurements = int(history_item.get("used_measurements", previous_used_measurements))
-        estimated_sources_update = pick_activity_peaks(
-            candidate_positions=result["candidate_positions"],
-            activity=activity_snapshot,
-            max_sources=MAX_SOURCES_TO_REPORT,
-            min_distance=MIN_SOURCE_DISTANCE,
-        )
         visualize_mlem_activity(
             dataset,
             candidate_positions=result["candidate_positions"],
             activity=activity_snapshot,
-            estimated_sources=estimated_sources_update,
             used_measurements=used_measurements,
             update_start=previous_used_measurements,
             update_end=used_measurements,
@@ -508,8 +425,6 @@ def main():
     print(" ", output_dir / "multi_source_scene_streaming.png")
     print(" ", output_dir / "streaming_mlem_activity_reconstruction.png")
     print(" ", output_dir / "streaming_mlem_score_history.png")
-    print(" ", output_dir / "streaming_best_position_history.png")
-    print(" ", output_dir / "streaming_localization_metric_history.png")
     print(" ", STREAMING_RUNS_CSV)
     print(" ", updates_3d_dir / "update_001.png ...")
     print(" ", updates_gif_path)

@@ -4,6 +4,7 @@ Entrypoint for the synthetic multi-point source demo.
 
 from pathlib import Path
 import sys
+from time import perf_counter
 
 import numpy as np
 
@@ -12,23 +13,24 @@ if str(ON_MOCK_DATA_DIR) not in sys.path:
     sys.path.insert(0, str(ON_MOCK_DATA_DIR))
 
 from common.forward_model import compute_detector_response_diagnostics
-from reconstruction_algorithms import pick_activity_peaks, reconstruct_sources
+from reconstruction_algorithms import reconstruct_sources
 from metrics import (
-    print_activity_localization_summary,
-    print_estimated_source_distance_summary,
-    summarize_activity_localization,
-    summarize_estimated_source_distances,
+    print_activity_map_similarity_summary,
+    summarize_activity_map_similarity,
 )
 from simulation import expected_counts_multi_source, generate_synthetic_dataset
 from visualization import (
     create_gif_from_frames,
     visualize_detector_response_curves,
     visualize_expected_counts_breakdown,
+    visualize_activity_map_comparison,
     visualize_forward_response_components,
     visualize_forward_signal_summary,
     visualize_history_score,
     visualize_mlem_activity,
     visualize_multi_source_scene,
+    visualize_true_voxel_activity,
+    voxelize_true_source_activity,
 )
 
 
@@ -40,11 +42,11 @@ def make_default_config():
 
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
-        "NUM_MEASUREMENTS": 42,  # Number of detector positions / generated measurements.
+        "NUM_MEASUREMENTS": 30,  # Number of detector positions / generated measurements.
         "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
-            {"position": (-2.4, -1.7, -1.0), "strength_per_second": 5200.0, "spread_cm": 0.45},  # lateral, moderately shallow node.
-            {"position": (0.7, -2.8, 0.8), "strength_per_second": 4200.0, "spread_cm": 0.65},  # deeper central node.
-            {"position": (2.9, -1.2, 1.7), "strength_per_second": 6100.0, "spread_cm": 0.55},  # cranial/lateral shallow node.
+            {"position": (-4.4, -0.7, -1.0), "strength_per_second": 3200.0, "spread_cm": 0.45},  # lateral, moderately shallow node.
+            {"position": (2.7, 4.8, 2.8), "strength_per_second": 4200.0, "spread_cm": 0.95},  # deeper central node.
+            {"position": (6.5, 1.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 1.55},  # cranial/lateral shallow node.
         ],
         "NUM_CHANNELS": 16,  # Number of detector channels.
         "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
@@ -75,19 +77,19 @@ def make_default_config():
         "ASSUMED_RESPONSE_SCALE": 10000,  # Calibration scale assumed by reconstruction; keep near GENERATION scale in matched simulations, usually test 1-1e5.
 
         # Reconstruction volume.
-        "SEARCH_START_DISTANCE": 4.0,  # Start searching this far from each detector channel along detector forward axis [cm].
-        "SEARCH_STOP_DISTANCE": 9.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
-        "SEARCH_START_RADIUS": 1.5,  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
-        "SEARCH_STOP_RADIUS": 5.0,  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
-        # The dataset derives the axis-aligned reconstruction box from this detector-distance cone/tube.
-        "GRID_SIZE": 10,  # ML-EM candidate grid size per axis.
+        "SEARCH_START_DISTANCE": 2.0,  # Start searching this far from each detector channel along detector forward axis [cm].
+        "SEARCH_STOP_DISTANCE": 15.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
+        "SEARCH_WIDTH": 10.0,  # Full width of the detector-relative rectangular search box [cm].
+        "SEARCH_HEIGHT": 5.0,  # Full height of the detector-relative rectangular search box [cm].
+        # The dataset derives the axis-aligned reconstruction box from the union of detector-relative search boxes.
+        "GRID_SIZE": 15,  # ML-EM candidate grid size per axis.
 
         # Mock detector trajectory.
         "TRAJECTORY_MODE": "grid",  # "grid", "line", or "around_center"; here it approximates a raster ultrasound probe sweep over skin.
         "TRAJECTORY_CENTER": (0.0, -2.0, 0.3),  # Reference center of the detector trajectory [cm].
-        "LATERAL_SPAN": 5.0,  # grid/line: max left/right offset from TRAJECTORY_CENTER [cm].
+        "LATERAL_SPAN": 15.0,  # grid/line: max left/right offset from TRAJECTORY_CENTER [cm].
         "VERTICAL_SPAN": 3.0,  # grid: max up/down offset; line: fixed Z offset from TRAJECTORY_CENTER [cm].
-        "BASE_DISTANCE": 5.2,  # grid/line: nominal detector distance from TRAJECTORY_CENTER [cm].
+        "BASE_DISTANCE": 5.0,  # grid/line: nominal detector distance from TRAJECTORY_CENTER [cm].
         "DISTANCE_SPAN": 0.2,  # grid only: sinusoidal variation of detector distance [cm].
         "ORBIT_RADIUS": 6.2,  # around_center only: nominal probe path radius; roughly skin radius + 1 cm detector standoff.
         "ORBIT_RADIUS_SPAN": 0.4,  # around_center only: small hand-pressure / neck-curvature distance variation [cm].
@@ -102,24 +104,21 @@ def make_default_config():
         "ANGULAR_JITTER_DEG": 1.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
-        "NUM_ITERATIONS": 120,  # ML-EM iteration count.
-        "HISTORY_INTERVAL": 60,  # How often ML-EM stores history snapshots.
-        "SPARSITY_LAMBDA": 0.2,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
-        "MAX_SOURCES_TO_REPORT": 3,  # Number of strongest separated peaks reported from the activity map.
-        "MIN_SOURCE_DISTANCE": 1.5,  # Minimum separation between reported activity peaks [cm].
-        "PEAK_CENTROID_RADIUS": 2.5,  # Weighted centroid radius for diffuse activity blobs; 0 reports the peak voxel itself.
+        "NUM_ITERATIONS": 1000,  # ML-EM iteration count.
+        "HISTORY_INTERVAL": 100,  # How often ML-EM stores history snapshots.
+        "SPARSITY_LAMBDA": 0.0,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
 
-        # Localization metric.
-        "ACTIVITY_MAX_RELATIVE_DROP": 0.5,  # Select voxels with activity >= (1 - drop) * max_activity.
+        # Activity-map similarity metric.
+        "ACTIVITY_MAP_THRESHOLD_FRACTION": 0.25,  # Active-mask threshold as fraction of each map maximum.
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,  # Print full generated measurement x channel table.
-        "UPDATE_FRAME_MAX_VOXELS": 200000,  # Max strongest voxels plotted in one history frame.
+        "UPDATE_FRAME_MAX_VOXELS": 10000000000,  # Max strongest voxels plotted in one history frame.
         "GIF_FPS": 1.0,  # GIF frame rate for history animation.
         "AXIS_LIMITS_3D": (  # 3D plot axis limits [cm].
-            (-10, 10),
-            (-10, 8),
-            (-7, 7),
+            (-30, 30),
+            (-30, 30),
+            (-30, 30),
         ),
     }
 
@@ -180,8 +179,8 @@ def run_experiment(overrides=None):
         trajectory_center=config["TRAJECTORY_CENTER"],
         search_start_distance=config["SEARCH_START_DISTANCE"],
         search_stop_distance=config["SEARCH_STOP_DISTANCE"],
-        search_start_radius=config["SEARCH_START_RADIUS"],
-        search_stop_radius=config["SEARCH_STOP_RADIUS"],
+        search_width=config["SEARCH_WIDTH"],
+        search_height=config["SEARCH_HEIGHT"],
         trajectory_mode=config["TRAJECTORY_MODE"],
         angular_jitter_deg=config["ANGULAR_JITTER_DEG"],
         lateral_span=config["LATERAL_SPAN"],
@@ -220,6 +219,7 @@ def run_experiment(overrides=None):
         "assumed_response_scale": config["ASSUMED_RESPONSE_SCALE"],
     }
 
+    reconstruction_start_time = perf_counter()
     result = reconstruct_sources(
         counts=dataset["counts"],
         geometry=dataset["geometry"],
@@ -230,35 +230,33 @@ def run_experiment(overrides=None):
         search_max=dataset["search_max"],
         search_start_distance=dataset["search_start_distance"],
         search_stop_distance=dataset["search_stop_distance"],
-        search_start_radius=dataset["search_start_radius"],
-        search_stop_radius=dataset["search_stop_radius"],
+        search_width=dataset["search_width"],
+        search_height=dataset["search_height"],
         method=config["reconstruction_method"],
         grid_size=config["GRID_SIZE"],
         num_iterations=config["NUM_ITERATIONS"],
         history_interval=config["HISTORY_INTERVAL"],
         sparsity_lambda=config["SPARSITY_LAMBDA"],
-        max_sources=config["MAX_SOURCES_TO_REPORT"],
-        min_source_distance=config["MIN_SOURCE_DISTANCE"],
-        peak_centroid_radius=config["PEAK_CENTROID_RADIUS"],
+    )
+    reconstruction_elapsed_seconds = perf_counter() - reconstruction_start_time
+    true_voxel_activity = voxelize_true_source_activity(
+        candidate_positions=result["candidate_positions"],
+        true_sources=dataset["true_sources"],
     )
 
-    localization_metrics = summarize_activity_localization(
-        voxel_positions=result["candidate_positions"],
-        activity=result["activity"],
-        true_sources=dataset["true_sources"],
-        max_relative_drop=config["ACTIVITY_MAX_RELATIVE_DROP"],
-    )
-    estimated_distance_summary = summarize_estimated_source_distances(
-        true_sources=dataset["true_sources"],
-        estimated_sources=result["estimated_sources"],
+    activity_map_similarity = summarize_activity_map_similarity(
+        true_activity=true_voxel_activity,
+        reconstructed_activity=result["activity"],
+        threshold_fraction=config["ACTIVITY_MAP_THRESHOLD_FRACTION"],
     )
 
     return {
         "config": config,
         "dataset": dataset,
         "result": result,
-        "localization_metrics": localization_metrics,
-        "estimated_distance_summary": estimated_distance_summary,
+        "reconstruction_elapsed_seconds": reconstruction_elapsed_seconds,
+        "true_voxel_activity": true_voxel_activity,
+        "activity_map_similarity": activity_map_similarity,
     }
 
 
@@ -320,8 +318,9 @@ def print_summary(dataset):
         f"(length {dataset['search_distance_window']:.2f})"
     )
     print(
-        "Search radius window [cm]:   "
-        f"{dataset['search_start_radius']:.2f} -> {dataset['search_stop_radius']:.2f}"
+        "Search box half-size [cm]:   "
+        f"width={dataset['search_width']:.2f}, "
+        f"height={dataset['search_height']:.2f}"
     )
     print(f"Search min [cm]:            {np.round(dataset['search_min'], 4)}")
     print(f"Search max [cm]:            {np.round(dataset['search_max'], 4)}")
@@ -347,81 +346,15 @@ def print_generated_counts_table(dataset):
         print(" ".join(row))
 
 
-def print_reconstruction_summary(method, result, true_sources, relative_drop):
-    """Print compact ML-EM reconstruction output."""
-    print()
-    print(f"Reconstruction method:       {method}")
-    print()
-    print("Estimated activity peaks:")
-    for index, source in enumerate(result["estimated_sources"], start=1):
-        print(
-            " "
-            f"P{index}: position={np.round(source['position'], 4)}, "
-            f"activity={source['activity']:.2f}"
-        )
-
-    print()
-    print("Reconstruction history:")
-    for index, (item, activity_snapshot) in enumerate(
-        zip(result["history"], result["activity_history"]),
-        start=1,
-    ):
-        print(f" step={index}")
-        for key, value in item.items():
-            if isinstance(value, np.ndarray):
-                print(f"  {key}: {np.round(value, 4).tolist()}")
-            elif isinstance(value, float):
-                print(f"  {key}: {value:.4f}")
-            else:
-                print(f"  {key}: {value}")
-        metrics = summarize_activity_localization(
-            voxel_positions=result["candidate_positions"],
-            activity=activity_snapshot,
-            true_sources=true_sources,
-            max_relative_drop=relative_drop,
-        )
-        print(
-            "  "
-            f"threshold_metric: selected_voxels={metrics['selected_voxel_count']}, "
-            f"mean={metrics['all_source_distance_mean']:.4f} cm, "
-            f"wmean={metrics['all_source_distance_weighted_mean']:.4f} cm, "
-            f"p90={metrics['all_source_distance_p90']:.4f} cm"
-        )
-
-
-def print_localization_metrics(result, true_sources, relative_drop):
-    """Print localization metrics for the activity map."""
-    metrics = summarize_activity_localization(
-        voxel_positions=result["candidate_positions"],
-        activity=result["activity"],
-        true_sources=true_sources,
-        max_relative_drop=relative_drop,
-    )
-    print_activity_localization_summary(metrics)
-
-
 def main():
     experiment = run_experiment()
     config = experiment["config"]
     dataset = experiment["dataset"]
     result = experiment["result"]
 
-    print_summary(dataset)
-    if config["PRINT_GENERATED_COUNTS_TABLE"]:
-        print_generated_counts_table(dataset)
-    print_reconstruction_summary(
-        method=config["reconstruction_method"],
-        result=result,
-        true_sources=dataset["true_sources"],
-        relative_drop=config["ACTIVITY_MAX_RELATIVE_DROP"],
-    )
-    print_localization_metrics(
-        result=result,
-        true_sources=dataset["true_sources"],
-        relative_drop=config["ACTIVITY_MAX_RELATIVE_DROP"],
-    )
-
-    print_estimated_source_distance_summary(experiment["estimated_distance_summary"])
+    print()
+    print(f"Reconstruction time [s]: {experiment['reconstruction_elapsed_seconds']:.3f}")
+    print_activity_map_similarity_summary(experiment["activity_map_similarity"])
 
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
     forward_model_dir = output_dir / "forward_model"
@@ -433,11 +366,31 @@ def main():
         for activity_snapshot in result["activity_history"]
     )
     ACTIVITY_COLOR_LIMITS = (0.0, float(np.log1p(max(max_activity_for_visualization, 0.0))))
+    true_voxel_activity = experiment["true_voxel_activity"]
 
     visualize_multi_source_scene(
         dataset,
         save_path=output_dir / "multi_source_scene.png",
         show=False,
+        axis_limits=config["AXIS_LIMITS_3D"],
+    )
+    visualize_true_voxel_activity(
+        dataset,
+        candidate_positions=result["candidate_positions"],
+        true_activity=true_voxel_activity,
+        save_path=output_dir / "true_voxel_activity.png",
+        show=False,
+        max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
+        axis_limits=config["AXIS_LIMITS_3D"],
+    )
+    visualize_activity_map_comparison(
+        dataset,
+        candidate_positions=result["candidate_positions"],
+        true_activity=true_voxel_activity,
+        reconstructed_activity=result["activity"],
+        save_path=output_dir / "activity_map_comparison.png",
+        show=False,
+        max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
         axis_limits=config["AXIS_LIMITS_3D"],
     )
     visualize_detector_response_curves(
@@ -509,7 +462,6 @@ def main():
         dataset,
         candidate_positions=result["candidate_positions"],
         activity=result["activity"],
-        estimated_sources=result["estimated_sources"],
         save_path=output_dir / "mlem_activity_reconstruction.png",
         show=False,
         max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
@@ -531,20 +483,12 @@ def main():
         start=1,
     ):
         iteration = int(history_item["iteration"])
-        estimated_sources_step = pick_activity_peaks(
-            candidate_positions=result["candidate_positions"],
-            activity=activity_snapshot,
-            max_sources=config["MAX_SOURCES_TO_REPORT"],
-            min_distance=config["MIN_SOURCE_DISTANCE"],
-            centroid_radius=config["PEAK_CENTROID_RADIUS"],
-        )
         frame_label = f"frame {frame_index}/{num_history_frames} | iteration {iteration}"
 
         visualize_mlem_activity(
             dataset,
             candidate_positions=result["candidate_positions"],
             activity=activity_snapshot,
-            estimated_sources=estimated_sources_step,
             save_path=history_3d_dir / f"iteration_{iteration:06d}.png",
             show=False,
             max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
@@ -561,18 +505,6 @@ def main():
         pattern="iteration_*.png",
         fps=config["GIF_FPS"],
     )
-
-    print()
-    print("Saved plots:")
-    print(" ", output_dir / "multi_source_scene.png")
-    print(" ", forward_model_dir / "detector_response_curves.png")
-    print(" ", forward_model_dir / "expected_counts_breakdown.png")
-    print(" ", forward_model_dir / "response_components_S1.png ...")
-    print(" ", forward_model_dir / "source_signal_summary.png")
-    print(" ", output_dir / "mlem_activity_reconstruction.png")
-    print(" ", output_dir / "mlem_score_history.png")
-    print(" ", history_3d_dir / "iteration_000001.png ...")
-    print(" ", history_gif_path)
 
 
 if __name__ == "__main__":

@@ -7,269 +7,114 @@ import numpy as np
 from common.geometry import EPS
 
 
-def _true_source_positions(true_sources):
-    return np.array([source["position"] for source in true_sources], dtype=float)
-
-
-def summarize_activity_localization(
-    voxel_positions,
-    activity,
-    true_sources,
-    max_relative_drop=0.25,
-):
+def summarize_activity_map_similarity(true_activity, reconstructed_activity, threshold_fraction=0.75):
     """
-    Summarize how close the strongest activity voxels are to true sources.
+    Compare true and reconstructed activity as voxel activity distributions.
 
-    max_relative_drop=0.25 selects voxels with activity >= 75% of the best voxel.
+    Both vectors must live on the same candidate voxel grid. Metrics that compare
+    shape are computed after normalizing each map to unit total activity, so they
+    are not dominated by an arbitrary global activity scale.
     """
-    voxel_positions = np.asarray(voxel_positions, dtype=float)
-    activity = np.asarray(activity, dtype=float)
-    true_positions = _true_source_positions(true_sources)
+    true_activity = np.asarray(true_activity, dtype=float)
+    reconstructed_activity = np.asarray(reconstructed_activity, dtype=float)
+    if true_activity.shape != reconstructed_activity.shape:
+        raise ValueError("true_activity and reconstructed_activity must have the same shape.")
+    if true_activity.ndim != 1:
+        raise ValueError("activity maps must be one-dimensional vectors.")
+    if len(true_activity) == 0:
+        raise ValueError("activity maps must not be empty.")
 
-    if len(voxel_positions) != len(activity):
-        raise ValueError("voxel_positions and activity must have the same length.")
-    if len(activity) == 0:
-        raise ValueError("activity must not be empty.")
-    if len(true_positions) == 0:
-        raise ValueError("true_sources must not be empty.")
+    true_activity = np.maximum(true_activity, 0.0)
+    reconstructed_activity = np.maximum(reconstructed_activity, 0.0)
+    true_total = float(np.sum(true_activity))
+    reconstructed_total = float(np.sum(reconstructed_activity))
+    threshold_fraction = float(threshold_fraction)
+    if not 0.0 <= threshold_fraction <= 1.0:
+        raise ValueError("threshold_fraction must be between 0 and 1.")
 
-    max_relative_drop = float(max_relative_drop)
-    if not 0.0 <= max_relative_drop <= 1.0:
-        raise ValueError("max_relative_drop must be between 0 and 1.")
-
-    max_activity = float(np.max(activity))
-    if max_activity <= EPS:
+    if true_total <= EPS or reconstructed_total <= EPS:
         return {
-            "selection": f"within {100.0 * max_relative_drop:.1f}% of max",
-            "selected_voxel_count": 0,
-            "total_voxel_count": int(len(activity)),
-            "max_activity": max_activity,
-            "activity_threshold": 0.0,
-            "selected_activity_fraction": 0.0,
-            "selected_voxel_positions": np.empty((0, 3), dtype=float),
-            "selected_voxel_activity": np.empty(0, dtype=float),
-            "true_source_positions": true_positions,
-            "voxel_to_source_distances": np.empty((0, len(true_positions)), dtype=float),
-            "all_source_distance_min": np.nan,
-            "all_source_distance_mean": np.nan,
-            "all_source_distance_weighted_mean": np.nan,
-            "all_source_distance_median": np.nan,
-            "all_source_distance_p90": np.nan,
-            "all_source_distance_max": np.nan,
-            "per_source_distances": [],
+            "true_total_activity": true_total,
+            "reconstructed_total_activity": reconstructed_total,
+            "scale_to_true_total": np.nan,
+            "cosine_similarity": np.nan,
+            "pearson_correlation": np.nan,
+            "normalized_l1_distance": np.nan,
+            "threshold_fraction": threshold_fraction,
+            "true_active_voxel_count": 0,
+            "reconstructed_active_voxel_count": 0,
+            "active_mask_overlap": np.nan,
+            "active_voxel_recall": np.nan,
+            "active_voxel_precision": np.nan,
         }
 
-    activity_threshold = (1.0 - max_relative_drop) * max_activity
-    selected_mask = activity >= activity_threshold
-    selected_positions = voxel_positions[selected_mask]
-    selected_activity = activity[selected_mask]
+    true_distribution = true_activity / true_total
+    reconstructed_distribution = reconstructed_activity / reconstructed_total
+    dot_product = float(np.dot(true_activity, reconstructed_activity))
+    norm_product = float(np.linalg.norm(true_activity) * np.linalg.norm(reconstructed_activity))
+    cosine_similarity = dot_product / max(norm_product, EPS)
 
-    deltas = selected_positions[:, None, :] - true_positions[None, :, :]
-    distances = np.sqrt(np.sum(deltas * deltas, axis=2))
-    flat_distances = distances.ravel()
-
-    selected_activity_sum = float(np.sum(selected_activity))
-    total_activity_sum = float(np.sum(activity))
-    distance_weights = np.repeat(np.maximum(selected_activity, EPS), len(true_positions))
-    weighted_mean = float(
-        np.average(flat_distances, weights=distance_weights)
+    true_centered = true_activity - float(np.mean(true_activity))
+    reconstructed_centered = reconstructed_activity - float(np.mean(reconstructed_activity))
+    centered_norm_product = float(
+        np.linalg.norm(true_centered) * np.linalg.norm(reconstructed_centered)
+    )
+    pearson_correlation = float(
+        np.dot(true_centered, reconstructed_centered) / max(centered_norm_product, EPS)
     )
 
-    per_source_distances = []
-    for source_index in range(len(true_positions)):
-        source_distances = distances[:, source_index]
-        per_source_distances.append(
-            {
-                "source_index": int(source_index),
-                "distance_min": float(np.min(source_distances)),
-                "distance_mean": float(np.mean(source_distances)),
-                "distance_weighted_mean": float(
-                    np.average(source_distances, weights=np.maximum(selected_activity, EPS))
-                ),
-                "distance_median": float(np.median(source_distances)),
-                "distance_p90": float(np.percentile(source_distances, 90.0)),
-                "distance_max": float(np.max(source_distances)),
-            }
-        )
+    normalized_difference = true_distribution - reconstructed_distribution
+    normalized_l1_distance = float(np.sum(np.abs(normalized_difference)))
+
+    true_threshold = threshold_fraction * float(np.max(true_activity))
+    reconstructed_threshold = threshold_fraction * float(np.max(reconstructed_activity))
+    true_mask = true_activity >= true_threshold
+    reconstructed_mask = reconstructed_activity >= reconstructed_threshold
+    intersection = int(np.count_nonzero(true_mask & reconstructed_mask))
+    union = int(np.count_nonzero(true_mask | reconstructed_mask))
+    true_active_count = int(np.count_nonzero(true_mask))
+    reconstructed_active_count = int(np.count_nonzero(reconstructed_mask))
 
     return {
-        "selection": f"within {100.0 * max_relative_drop:.1f}% of max",
-        "selected_voxel_count": int(len(selected_positions)),
-        "total_voxel_count": int(len(activity)),
-        "max_activity": max_activity,
-        "activity_threshold": float(activity_threshold),
-        "selected_activity_fraction": selected_activity_sum / max(total_activity_sum, EPS),
-        "selected_voxel_positions": selected_positions.copy(),
-        "selected_voxel_activity": selected_activity.copy(),
-        "true_source_positions": true_positions.copy(),
-        "voxel_to_source_distances": distances.copy(),
-        "all_source_distance_min": float(np.min(flat_distances)),
-        "all_source_distance_mean": float(np.mean(flat_distances)),
-        "all_source_distance_weighted_mean": weighted_mean,
-        "all_source_distance_median": float(np.median(flat_distances)),
-        "all_source_distance_p90": float(np.percentile(flat_distances, 90.0)),
-        "all_source_distance_max": float(np.max(flat_distances)),
-        "per_source_distances": per_source_distances,
+        "true_total_activity": true_total,
+        "reconstructed_total_activity": reconstructed_total,
+        "scale_to_true_total": true_total / max(reconstructed_total, EPS),
+        "cosine_similarity": float(cosine_similarity),
+        "pearson_correlation": pearson_correlation,
+        "normalized_l1_distance": normalized_l1_distance,
+        "threshold_fraction": threshold_fraction,
+        "true_active_voxel_count": true_active_count,
+        "reconstructed_active_voxel_count": reconstructed_active_count,
+        "active_mask_overlap": intersection / max(union, 1),
+        "active_voxel_recall": intersection / max(true_active_count, 1),
+        "active_voxel_precision": intersection / max(reconstructed_active_count, 1),
     }
 
 
-def print_activity_localization_summary(summary):
-    """Print a compact activity localization metric summary."""
+def print_activity_map_similarity_summary(summary):
+    """Print activity-map similarity metrics."""
     print()
-    print("Activity localization metrics:")
-    print(f" selection:                 {summary['selection']}")
+    print("Activity map similarity metrics:")
     print(
-        " selected voxels:           "
-        f"{summary['selected_voxel_count']} / {summary['total_voxel_count']}"
+        " total activity true/recon: "
+        f"{summary['true_total_activity']:.4f} / "
+        f"{summary['reconstructed_total_activity']:.4f}"
+    )
+    print(f" scale recon -> true total: {summary['scale_to_true_total']:.6f}")
+    print(
+        " shape cosine / pearson:    "
+        f"{summary['cosine_similarity']:.4f} / "
+        f"{summary['pearson_correlation']:.4f}"
     )
     print(
-        " max/threshold activity:    "
-        f"{summary['max_activity']:.4f} / {summary['activity_threshold']:.4f}"
+        " active mask voxels true/recon: "
+        f"{summary['true_active_voxel_count']} / "
+        f"{summary['reconstructed_active_voxel_count']} "
+        f"(threshold {100.0 * summary['threshold_fraction']:.1f}% of each max)"
     )
     print(
-        " selected activity fraction:"
-        f" {100.0 * summary['selected_activity_fraction']:.2f}%"
+        " active mask overlap/recall/precision: "
+        f"{summary['active_mask_overlap']:.4f} / "
+        f"{summary['active_voxel_recall']:.4f} / "
+        f"{summary['active_voxel_precision']:.4f}"
     )
-
-    if summary["selected_voxel_count"] <= 0:
-        print(" no active voxels selected")
-        return
-
-    print(" selected voxel -> true source distances [cm]:")
-    print(
-        "  min/mean/wmean/median/p90/max: "
-        f"{summary['all_source_distance_min']:.4f} / "
-        f"{summary['all_source_distance_mean']:.4f} / "
-        f"{summary['all_source_distance_weighted_mean']:.4f} / "
-        f"{summary['all_source_distance_median']:.4f} / "
-        f"{summary['all_source_distance_p90']:.4f} / "
-        f"{summary['all_source_distance_max']:.4f}"
-    )
-
-    print(" per true source distances from selected voxels [cm]:")
-    for source_distances in summary["per_source_distances"]:
-        source_number = source_distances["source_index"] + 1
-        print(
-            f"  S{source_number}: "
-            f"min={source_distances['distance_min']:.4f}, "
-            f"mean={source_distances['distance_mean']:.4f}, "
-            f"wmean={source_distances['distance_weighted_mean']:.4f}, "
-            f"p90={source_distances['distance_p90']:.4f}, "
-            f"max={source_distances['distance_max']:.4f}"
-        )
-
-
-def summarize_estimated_source_distances(true_sources, estimated_sources):
-    """Greedily match every true source to the nearest unused estimated peak."""
-    true_positions = _true_source_positions(true_sources)
-    estimated_positions = np.array(
-        [source["position"] for source in estimated_sources],
-        dtype=float,
-    )
-
-    if len(true_positions) == 0:
-        raise ValueError("true_sources must not be empty.")
-
-    if len(estimated_positions) == 0:
-        return {
-            "true_source_count": int(len(true_positions)),
-            "estimated_source_count": 0,
-            "matched_count": 0,
-            "per_true_source": [],
-            "unmatched_true_indices": list(range(len(true_positions))),
-            "unmatched_estimated_indices": [],
-            "total_true_to_estimated_distance": np.nan,
-            "distance_min": np.nan,
-            "distance_mean": np.nan,
-            "distance_max": np.nan,
-        }
-
-    deltas = true_positions[:, None, :] - estimated_positions[None, :, :]
-    distance_matrix = np.sqrt(np.sum(deltas * deltas, axis=2))
-    true_count, estimated_count = distance_matrix.shape
-    per_true_source = []
-    matched_true_indices = set()
-    matched_estimated_indices = set()
-    available_estimated_indices = list(range(estimated_count))
-
-    for true_index in range(true_count):
-        if not available_estimated_indices:
-            break
-
-        available_distances = distance_matrix[true_index, available_estimated_indices]
-        nearest_available_index = int(np.argmin(available_distances))
-        estimated_index = available_estimated_indices.pop(nearest_available_index)
-
-        matched_true_indices.add(true_index)
-        matched_estimated_indices.add(estimated_index)
-        estimated_source = estimated_sources[estimated_index]
-        per_true_source.append(
-            {
-                "true_index": int(true_index),
-                "estimated_index": int(estimated_index),
-                "true_position": true_positions[true_index].copy(),
-                "estimated_position": estimated_positions[estimated_index].copy(),
-                "estimated_activity": float(estimated_source["activity"]),
-                "distance": float(distance_matrix[true_index, estimated_index]),
-            }
-        )
-
-    distances = np.array([item["distance"] for item in per_true_source], dtype=float)
-    return {
-        "true_source_count": int(true_count),
-        "estimated_source_count": int(estimated_count),
-        "matched_count": int(len(per_true_source)),
-        "per_true_source": per_true_source,
-        "unmatched_true_indices": [
-            index for index in range(true_count) if index not in matched_true_indices
-        ],
-        "unmatched_estimated_indices": [
-            index for index in range(estimated_count) if index not in matched_estimated_indices
-        ],
-        "total_true_to_estimated_distance": float(np.sum(distances)),
-        "distance_min": float(np.min(distances)),
-        "distance_mean": float(np.mean(distances)),
-        "distance_max": float(np.max(distances)),
-    }
-
-
-def print_estimated_source_distance_summary(summary):
-    """Print nearest estimated peak distance for every true source."""
-    print()
-    print("Estimated peak -> true source distances:")
-    print(
-        " compared sources:          "
-        f"{summary['true_source_count']} true, "
-        f"{summary['estimated_source_count']} estimated"
-    )
-    print(f" unique matched pairs:       {summary['matched_count']}")
-
-    if not summary["per_true_source"]:
-        print(" no estimated peaks to compare")
-        return
-
-    if summary["true_source_count"] == 1:
-        item = summary["per_true_source"][0]
-        estimated_number = item["estimated_index"] + 1
-        print(
-            f"  S1 -> nearest P{estimated_number}: "
-            f"distance={item['distance']:.4f} cm, "
-            f"true={np.round(item['true_position'], 4).tolist()}, "
-            f"estimated={np.round(item['estimated_position'], 4).tolist()}, "
-            f"activity={item['estimated_activity']:.2f}"
-        )
-
-    print(
-        " total true->estimate distance [cm]: "
-        f"{summary['total_true_to_estimated_distance']:.4f}"
-    )
-    if summary["true_source_count"] == 1:
-        return
-
-    print(" multiple true sources: only total unique-match distance is shown")
-    if summary["unmatched_true_indices"]:
-        labels = [f"S{index + 1}" for index in summary["unmatched_true_indices"]]
-        print(f" unmatched true sources:    {', '.join(labels)}")
-    if summary["unmatched_estimated_indices"]:
-        labels = [f"P{index + 1}" for index in summary["unmatched_estimated_indices"]]
-        print(f" unmatched estimated peaks: {', '.join(labels)}")

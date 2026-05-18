@@ -324,8 +324,8 @@ FIXED_OVERRIDES = {
     "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
     "SEARCH_START_DISTANCE": 40.0,  # Start searching this far from each detector channel along detector forward axis [cm].
     "SEARCH_STOP_DISTANCE": 140.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
-    "SEARCH_START_RADIUS": 10.0,  # Search tube/cone radius at SEARCH_START_DISTANCE [cm].
-    "SEARCH_STOP_RADIUS": 60.0,  # Search tube/cone radius at SEARCH_STOP_DISTANCE [cm].
+    "SEARCH_WIDTH": 60.0,  # Full width of the detector-relative rectangular search box [cm].
+    "SEARCH_HEIGHT": 36.0,  # Full height of the detector-relative rectangular search box [cm].
     "GRID_SIZE": 13,  # ML-EM candidate grid size per axis.
     "TRAJECTORY_MODE": "grid",  # "grid" or "around_center".
     "LATERAL_SPAN": 60.0,  # grid only: max left/right position offset from TRAJECTORY_CENTER [cm].
@@ -343,9 +343,6 @@ FIXED_OVERRIDES = {
     "NUM_ITERATIONS": 10000,  # ML-EM iteration count. Set back to 10000 if you want to match run_demo exactly.
     "HISTORY_INTERVAL": 1000,  # How often ML-EM stores history snapshots.
     "SPARSITY_LAMBDA": 0.0,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
-    "MAX_SOURCES_TO_REPORT": 1,  # Number of strongest separated peaks reported from the activity map.
-    "MIN_SOURCE_DISTANCE": 8.0,  # Minimum separation between reported activity peaks [cm].
-    "ACTIVITY_MAX_RELATIVE_DROP": 0.5,  # Select voxels with activity >= (1 - drop) * max_activity.
     "PRINT_GENERATED_COUNTS_TABLE": False,  # Sweep runs skip the long generated-count table.
     "UPDATE_FRAME_MAX_VOXELS": 1000,  # Max strongest voxels plotted in one history frame.
     "GIF_FPS": 1.0,  # GIF frame rate if visualizations are enabled elsewhere.
@@ -406,22 +403,6 @@ def iter_parameter_cases(sweep_groups):
             yield group_name, {**base_overrides, **sweep_overrides}, sweep_overrides
 
 
-def _position_columns(prefix, position):
-    if position is None:
-        return {
-            f"{prefix}_x": np.nan,
-            f"{prefix}_y": np.nan,
-            f"{prefix}_z": np.nan,
-        }
-
-    position = np.asarray(position, dtype=float)
-    return {
-        f"{prefix}_x": float(position[0]),
-        f"{prefix}_y": float(position[1]),
-        f"{prefix}_z": float(position[2]),
-    }
-
-
 def _csv_value(value):
     """Convert nested settings to compact CSV-safe values."""
     if isinstance(value, np.ndarray):
@@ -449,17 +430,8 @@ def format_case_parameters(parameter_overrides):
 
 def summarize_run(case_index, group_name, parameter_overrides, experiment, elapsed_seconds):
     """Flatten one run into a CSV row."""
-    dataset = experiment["dataset"]
-    result = experiment["result"]
     config = experiment["config"]
-    localization = experiment["localization_metrics"]
-    estimated_distances = experiment["estimated_distance_summary"]
-
-    true_sources = dataset["true_sources"]
-    first_true_position = true_sources[0]["position"] if true_sources else None
-    first_estimated = result["estimated_sources"][0] if result["estimated_sources"] else None
-    first_estimated_position = first_estimated["position"] if first_estimated else None
-    first_estimated_activity = first_estimated["activity"] if first_estimated else np.nan
+    similarity = experiment["activity_map_similarity"]
 
     total_source_strength_per_second = sum(
         float(source["strength_per_second"])
@@ -474,20 +446,18 @@ def summarize_run(case_index, group_name, parameter_overrides, experiment, elaps
             config["BACKGROUND_MEAN_PER_SECOND"]
             / total_source_strength_per_second
         ),
-        "estimated_peak_activity": float(first_estimated_activity),
-        "estimated_peak_error_cm": float(estimated_distances["distance_mean"]),
-        "estimated_total_error_cm": float(estimated_distances["total_true_to_estimated_distance"]),
-        "selected_voxel_count": int(localization["selected_voxel_count"]),
-        "selected_activity_fraction": float(localization["selected_activity_fraction"]),
-        "activity_distance_min_cm": float(localization["all_source_distance_min"]),
-        "activity_distance_mean_cm": float(localization["all_source_distance_mean"]),
-        "activity_distance_weighted_mean_cm": float(
-            localization["all_source_distance_weighted_mean"]
-        ),
-        "activity_distance_p90_cm": float(localization["all_source_distance_p90"]),
+        "true_total_activity": float(similarity["true_total_activity"]),
+        "reconstructed_total_activity": float(similarity["reconstructed_total_activity"]),
+        "scale_to_true_total": float(similarity["scale_to_true_total"]),
+        "cosine_similarity": float(similarity["cosine_similarity"]),
+        "pearson_correlation": float(similarity["pearson_correlation"]),
+        "active_mask_overlap": float(similarity["active_mask_overlap"]),
+        "active_mask_recall": float(similarity["active_voxel_recall"]),
+        "active_mask_precision": float(similarity["active_voxel_precision"]),
+        "true_active_voxel_count": int(similarity["true_active_voxel_count"]),
+        "reconstructed_active_voxel_count": int(similarity["reconstructed_active_voxel_count"]),
+        "activity_threshold_fraction": float(similarity["threshold_fraction"]),
     }
-    row.update(_position_columns("true_source", first_true_position))
-    row.update(_position_columns("estimated_peak", first_estimated_position))
 
     row["fixed_overrides"] = format_fixed_overrides()
     for key in sweep_parameter_columns():
@@ -508,21 +478,17 @@ def write_rows(path, rows):
         *sweep_parameter_columns(),
         "background_source_ratio",
         "elapsed_seconds",
-        "true_source_x",
-        "true_source_y",
-        "true_source_z",
-        "estimated_peak_x",
-        "estimated_peak_y",
-        "estimated_peak_z",
-        "estimated_peak_activity",
-        "estimated_peak_error_cm",
-        "estimated_total_error_cm",
-        "selected_voxel_count",
-        "selected_activity_fraction",
-        "activity_distance_min_cm",
-        "activity_distance_mean_cm",
-        "activity_distance_weighted_mean_cm",
-        "activity_distance_p90_cm",
+        "true_total_activity",
+        "reconstructed_total_activity",
+        "scale_to_true_total",
+        "cosine_similarity",
+        "pearson_correlation",
+        "active_mask_overlap",
+        "active_mask_recall",
+        "active_mask_precision",
+        "true_active_voxel_count",
+        "reconstructed_active_voxel_count",
+        "activity_threshold_fraction",
     ]
 
     with path.open("w", newline="", encoding="utf-8") as output_file:
@@ -554,15 +520,12 @@ def main():
         )
         rows.append(row)
 
-        estimated_y = row["estimated_peak_y"]
-        true_y = row["true_source_y"]
         print(
             f"[{case_index}/{len(cases)}] "
             f"group={group_name}, "
             f"{format_case_parameters(display_parameters)} -> "
-            f"peak_error={row['estimated_peak_error_cm']:.4f} cm, "
-            f"activity_wmean={row['activity_distance_weighted_mean_cm']:.4f} cm, "
-            f"true_y={true_y:.4f}, estimated_y={estimated_y:.4f}, "
+            f"cosine={row['cosine_similarity']:.4f}, "
+            f"mask_overlap={row['active_mask_overlap']:.4f}, "
             f"elapsed={elapsed_seconds:.1f}s"
         )
 
