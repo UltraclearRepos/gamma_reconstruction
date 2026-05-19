@@ -26,7 +26,6 @@ SWEEP_DEFAULTS = {
     "BACKGROUND_CHANNEL_STD_PER_SECOND": 100.0,  # Channel-to-channel background std per second.
     "CHANNEL_SCALE_MEAN": 1.0,  # Mean multiplicative channel sensitivity used during data generation.
     "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std used during data generation.
-    "GENERATION_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
     "GENERATION_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
     "GENERATION_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
     "GENERATION_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
@@ -39,7 +38,6 @@ SWEEP_DEFAULTS = {
     "GENERATION_RESPONSE_SCALE": 1.0,  # Calibration scale from source units to counts; tune over orders of magnitude, e.g. 1-1e5.
     "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Background rate used by reconstruction model.
     "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
-    "ASSUMED_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
     "ASSUMED_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
     "ASSUMED_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
     "ASSUMED_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
@@ -66,8 +64,6 @@ SWEEP_GROUPS = [
     #         "ANGULAR_JITTER_DEG": 20.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
     #         "FIXED_SWEEP_Z_RANGE_DEG": 60.0,  # Best tested left/right random angle range around world Z axis.
     #         "FIXED_SWEEP_X_RANGE_DEG": 60.0,  # Best tested up/down random angle range around world X axis.
-    #         "GENERATION_K": 4.5,  # Generated angular response.
-    #         "ASSUMED_K": 4.5,  # Matched angular response used by reconstruction.
     #         "CHANNEL_SCALE_MEAN": 1.0,  # Generated global channel sensitivity.
     #         "ASSUMED_CHANNEL_SCALE": 1.0,  # Matched global channel sensitivity used by reconstruction.
     #     },
@@ -117,8 +113,6 @@ SWEEP_GROUPS = [
             "FIXED_SWEEP_X_RANGE_DEG": 60.0,  # Best tested up/down random angle range around world X axis.
             "BACKGROUND_MEAN_PER_SECOND": 1000.0,  # True background level.
             "BACKGROUND_CHANNEL_STD_PER_SECOND": 0.0,  # Channel-to-channel background std per second.
-            "GENERATION_K": 4.5,  # Generated angular response.
-            "ASSUMED_K": 4.5,  # Matched angular response used by reconstruction.
             "GENERATION_DISTANCE_POWER": 0.0,  # Extra generated distance falloff beyond solid angle.
             "ASSUMED_DISTANCE_POWER": 0.0,  # Matched extra distance falloff used by reconstruction.
             "CHANNEL_SCALE_MEAN": 1.0,  # Generated global channel sensitivity.
@@ -183,14 +177,6 @@ SWEEP_GROUPS = [
     #         "CHANNEL_SCALE_MEAN": [0.8, 1.0],  # Mean multiplicative channel sensitivity used during data generation.
     #         "CHANNEL_SCALE_STD": [0.08, 0.1],  # Channel-to-channel sensitivity mismatch std used during data generation.
     #         "ASSUMED_CHANNEL_SCALE": [0.8, 0.9, 1.0, 1.1, 1.2, 1.5],  # Global channel sensitivity used by reconstruction model.
-    #     },
-    # },
-    # {
-    #     "name": "k_model",
-    #     "base": {},
-    #     "sweep": {
-    #         "GENERATION_K": [2, 4.5, 9.0],  # >= 0; higher = narrower angular response, so off-axis sources give fewer counts.
-    #         "ASSUMED_K": [2, 3, 4.5, 6, 9],  # Angular sensitivity exponent used by reconstruction model.
     #     },
     # },
     # {

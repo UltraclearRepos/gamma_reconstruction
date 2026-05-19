@@ -31,6 +31,9 @@ from visualization import (
     visualize_history_score,
     visualize_mlem_activity,
     visualize_multi_source_scene,
+    render_system_matrix_measurement_3d_frames,
+    visualize_system_matrix,
+    visualize_system_matrix_sensitivity_3d,
     visualize_true_voxel_activity,
     voxelize_true_source_activity,
 )
@@ -46,10 +49,34 @@ def make_default_config():
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
         "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
         "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
-            {"position": (-5.0, -1.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.4},  # lateral, moderately shallow node.
-            {"position": (3.2, 1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.8},  # deeper central node.
-            # {"position": (6.5, 1.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 1.55},  # cranial/lateral shallow node.
+            {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
+            {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
+            # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
         ],
+        # "TRUE_SOURCE_SPECS": [
+        #     # Lewy płat: głębiej, rozmyty
+        #     {"position": (-2.5, 1.5, -1.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
+        #     # Prawy płat: odrobinę wyżej, nieco mniejszy
+        #     {"position": (2.5, 1.0, 1.0), "strength_per_second": 4500.0, "spread_cm": 1.0},
+        #     # "Gorący guzek": bardzo blisko skóry (płytko), mały, wysoka aktywność
+        #     {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.4},
+        # ],
+        # "TRUE_SOURCE_SPECS": [
+        #     # Główne źródło ukryte głęboko w tkance
+        #     {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
+        #     # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
+        #     {"position": (0.0, 6.0, 0.0), "strength_per_second": 2000.0, "spread_cm": 0.5},
+        #     # Punkt referencyjny z boku dla oceny ogólnej geometrii
+        #     {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
+        # ],
+        # "TRUE_SOURCE_SPECS": [
+        #     # Masywne, rozmyte źródło centralne
+        #     {"position": (-1.0, 0.0, 0.0), "strength_per_second": 20000.0, "spread_cm": 2.0},
+        #     # Bardzo małe, słabe, odseparowane geometrycznie źródło
+        #     {"position": (4.0, 4.0, 3.0), "strength_per_second": 1500.0, "spread_cm": 0.2},
+        #     # Średnie źródło na "dolnej" krawędzi trajektorii Z
+        #     {"position": (2.0, -3.0, -4.0), "strength_per_second": 5000.0, "spread_cm": 0.6},
+        # ],
         "NUM_CHANNELS": 16,  # Number of detector channels.
         "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
         "MEASUREMENT_DURATION_SECONDS": 1.0,  # Duration of one measurement; rates below are multiplied by this.
@@ -57,7 +84,6 @@ def make_default_config():
         "BACKGROUND_CHANNEL_STD_PER_SECOND": 10.0,  # Channel-to-channel background std per second.
         "CHANNEL_SCALE_MEAN": 1.0,  # Mean multiplicative channel sensitivity.
         "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std.
-        "GENERATION_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
         "GENERATION_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
         "GENERATION_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
         "GENERATION_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
@@ -72,7 +98,6 @@ def make_default_config():
         # Assumed reconstruction model.
         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Background rate used by reconstruction model.
         "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
-        "ASSUMED_K": 4.5,  # Legacy cos^k sharpness used only when ANGULAR_WIDTH_DEG is None; useful range: 1-12.
         "ASSUMED_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
         "ASSUMED_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
         "ASSUMED_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
@@ -115,14 +140,14 @@ def make_default_config():
         "NUM_ITERATIONS": 100,  # ML-EM iteration count.
         "HISTORY_INTERVAL": 10,  # How often ML-EM stores history snapshots.
         "SPARSITY_LAMBDA": 0.0,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
-        "SIEVE_SIGMA_CM": 1.0,  # Gaussian 3D sieve smoothing after each ML-EM iteration; 0 disables.
+        "SIEVE_SIGMA_CM": 0.6,  # Gaussian 3D sieve smoothing after each ML-EM iteration; 0 disables.
         "MIN_COVERAGE_MEASUREMENTS": 8,  # Keep only voxels seen by at least this many detector positions.
         "COVERAGE_RELATIVE_THRESHOLD": 0.05,  # Measurement counts as seeing a voxel above this fraction of its max response.
 
         # Activity-map similarity metric.
         "ACTIVITY_MAP_THRESHOLD_FRACTION": 0.25,  # Active-mask threshold as fraction of each map maximum.
-        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.75,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
-        "ACTIVITY_COMPONENT_MIN_VOXELS": 5,  # Minimum connected voxels needed to report a blob.
+        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.5,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
+        "ACTIVITY_COMPONENT_MIN_VOXELS": 3,  # Minimum connected voxels needed to report a blob.
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,  # Print full generated measurement x channel table.
@@ -180,7 +205,6 @@ def run_experiment(overrides=None):
         background_channel_std_per_second=config["BACKGROUND_CHANNEL_STD_PER_SECOND"],
         channel_scale_mean=config["CHANNEL_SCALE_MEAN"],
         channel_scale_std=config["CHANNEL_SCALE_STD"],
-        generation_k=config["GENERATION_K"],
         generation_distance_power=config["GENERATION_DISTANCE_POWER"],
         generation_angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
         generation_angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
@@ -225,7 +249,6 @@ def run_experiment(overrides=None):
             config["ASSUMED_CHANNEL_SCALE"],
             dtype=float,
         ),
-        "assumed_k": config["ASSUMED_K"],
         "assumed_distance_power": config["ASSUMED_DISTANCE_POWER"],
         "assumed_angular_peak_angle_deg": config["ASSUMED_ANGULAR_PEAK_DEG"],
         "assumed_angular_width_deg": config["ASSUMED_ANGULAR_WIDTH_DEG"],
@@ -414,8 +437,10 @@ def main():
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
     forward_model_dir = output_dir / "forward_model"
     history_3d_dir = output_dir / "mlem_activity_history_3d"
+    h_frames_3d_dir = forward_model_dir / "system_matrix_H_measurements_3d"
     forward_model_dir.mkdir(parents=True, exist_ok=True)
     history_3d_dir.mkdir(parents=True, exist_ok=True)
+    h_frames_3d_dir.mkdir(parents=True, exist_ok=True)
     max_activity_for_visualization = max(
         float(np.max(activity_snapshot))
         for activity_snapshot in result["activity_history"]
@@ -451,7 +476,6 @@ def main():
         axis_limits=config["AXIS_LIMITS_3D"],
     )
     visualize_detector_response_curves(
-        k=config["GENERATION_K"],
         angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
         angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
         collimator_half_angle_deg=config["GENERATION_COLLIMATOR_HALF_ANGLE_DEG"],
@@ -467,6 +491,39 @@ def main():
         save_path=forward_model_dir / "expected_counts_breakdown.png",
         show=False,
     )
+    visualize_system_matrix(
+        result["system_matrix"],
+        num_measurements=dataset["counts"].shape[0],
+        num_channels=dataset["counts"].shape[1],
+        save_path=forward_model_dir / "system_matrix_H.png",
+        show=False,
+    )
+    visualize_system_matrix_sensitivity_3d(
+        dataset,
+        candidate_positions=result["candidate_positions"],
+        system_matrix=result["system_matrix"],
+        save_path=forward_model_dir / "system_matrix_H_sensitivity_3d.png",
+        show=False,
+        max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
+        axis_limits=config["AXIS_LIMITS_3D"],
+    )
+    clear_existing_frames(h_frames_3d_dir, "measurement_3d_*.png")
+    render_system_matrix_measurement_3d_frames(
+        dataset,
+        candidate_positions=result["candidate_positions"],
+        system_matrix=result["system_matrix"],
+        num_measurements=dataset["counts"].shape[0],
+        num_channels=dataset["counts"].shape[1],
+        frames_dir=h_frames_3d_dir,
+        max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
+        axis_limits=config["AXIS_LIMITS_3D"],
+    )
+    create_gif_from_frames(
+        frames_dir=h_frames_3d_dir,
+        output_path=forward_model_dir / "system_matrix_H_3d_by_measurement.gif",
+        pattern="measurement_3d_*.png",
+        fps=config["GIF_FPS"],
+    )
 
     source_signal_maps = []
     source_labels = []
@@ -477,7 +534,6 @@ def main():
             rotations=dataset["rotations"],
             translations=dataset["translations"],
             channel_scales=dataset["true_channel_scales"],
-            k=config["GENERATION_K"],
             distance_power=config["GENERATION_DISTANCE_POWER"],
             angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
             angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],
@@ -497,7 +553,6 @@ def main():
             translations=dataset["translations"],
             channel_scales=dataset["true_channel_scales"],
             backgrounds=np.zeros_like(dataset["true_backgrounds"]),
-            k=config["GENERATION_K"],
             distance_power=config["GENERATION_DISTANCE_POWER"],
             angular_peak_angle_deg=config["GENERATION_ANGULAR_PEAK_DEG"],
             angular_width_deg=config["GENERATION_ANGULAR_WIDTH_DEG"],

@@ -920,6 +920,301 @@ def visualize_history_score(history, save_path=None, show=False):
     finalize_figure(fig, save_path=save_path, show=show)
 
 
+def visualize_system_matrix(
+    system_matrix,
+    num_measurements,
+    num_channels,
+    save_path=None,
+    show=False,
+    max_voxels_to_draw=4000,
+):
+    """Show the reconstruction matrix H: rows are measurement-channel pairs, columns are voxels."""
+    import matplotlib.pyplot as plt
+
+    system_matrix = np.asarray(system_matrix, dtype=float)
+    if system_matrix.size == 0:
+        return
+
+    num_rows, num_voxels = system_matrix.shape
+    stride = max(1, int(np.ceil(num_voxels / float(max_voxels_to_draw))))
+    drawn_matrix = system_matrix[:, ::stride]
+    drawn_voxel_count = drawn_matrix.shape[1]
+
+    row_sum = np.sum(system_matrix, axis=1).reshape(num_measurements, num_channels)
+    voxel_sensitivity = np.sum(system_matrix, axis=0)
+    nonzero_values = system_matrix[system_matrix > 0.0]
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 9), constrained_layout=True)
+    axes = axes.ravel()
+
+    image = axes[0].imshow(
+        np.log10(np.maximum(drawn_matrix, EPS)),
+        aspect="auto",
+        origin="lower",
+        cmap="magma",
+    )
+    axes[0].set_title(f"H matrix log10 response ({num_rows} x {num_voxels})")
+    axes[0].set_xlabel(
+        f"voxel index sample, every {stride}" if stride > 1 else "voxel index"
+    )
+    axes[0].set_ylabel("measurement-channel row")
+    colorbar = fig.colorbar(image, ax=axes[0], shrink=0.82)
+    colorbar.set_label("log10(H)")
+
+    _add_heatmap(
+        fig,
+        axes[1],
+        row_sum,
+        "row response sum",
+        "sum over voxels",
+        cmap="viridis",
+        log_scale=True,
+    )
+
+    axes[2].plot(np.arange(num_voxels), voxel_sensitivity, linewidth=1.2)
+    axes[2].set_title("voxel sensitivity")
+    axes[2].set_xlabel("voxel index")
+    axes[2].set_ylabel("sum over rows")
+    axes[2].grid(True, alpha=0.3)
+
+    if len(nonzero_values) > 0:
+        axes[3].hist(np.log10(np.maximum(nonzero_values, EPS)), bins=80, color="tab:blue")
+    axes[3].set_title("non-zero H values")
+    axes[3].set_xlabel("log10(H)")
+    axes[3].set_ylabel("count")
+    axes[3].grid(True, alpha=0.3)
+
+    if drawn_voxel_count == 0:
+        axes[0].text(0.5, 0.5, "empty", transform=axes[0].transAxes, ha="center")
+
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def visualize_system_matrix_sensitivity_3d(
+    dataset,
+    candidate_positions,
+    system_matrix,
+    save_path=None,
+    show=False,
+    max_voxels=3000,
+    axis_limits=None,
+):
+    """Show voxel sensitivity from H in 3D: sensitivity[v] = sum_rows H[row, v]."""
+    import matplotlib.pyplot as plt
+
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    system_matrix = np.asarray(system_matrix, dtype=float)
+    if system_matrix.size == 0 or len(candidate_positions) == 0:
+        return
+
+    sensitivity = np.sum(system_matrix, axis=0)
+    if len(sensitivity) != len(candidate_positions):
+        raise ValueError("system_matrix columns must match candidate_positions length.")
+
+    translations = np.asarray(dataset["translations"], dtype=float)
+    rotations = dataset.get("rotations")
+    forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
+    true_source_positions = np.array([source["position"] for source in dataset["true_sources"]], dtype=float)
+
+    fig = plt.figure(figsize=(8, 7))
+    ax = fig.add_subplot(111, projection="3d")
+    points_for_scale = [translations, true_source_positions]
+
+    if np.max(sensitivity) > 0.0:
+        num_voxels = min(int(max_voxels), len(sensitivity))
+        strongest_indices = np.argsort(sensitivity)[-num_voxels:]
+        voxel_positions = candidate_positions[strongest_indices]
+        voxel_sensitivity = sensitivity[strongest_indices]
+        normalized = np.clip(voxel_sensitivity / max(float(np.max(voxel_sensitivity)), EPS), 0.0, 1.0)
+        scatter = ax.scatter(
+            voxel_positions[:, 0],
+            voxel_positions[:, 1],
+            voxel_positions[:, 2],
+            c=np.log10(np.maximum(voxel_sensitivity, EPS)),
+            s=8.0 + 48.0 * normalized,
+            cmap="plasma",
+            alpha=0.32,
+            depthshade=False,
+            label="H voxel sensitivity",
+        )
+        colorbar = fig.colorbar(scatter, ax=ax, shrink=0.75)
+        colorbar.set_label("log10(sum H[:, voxel])")
+        points_for_scale.append(voxel_positions)
+
+    ax.plot(
+        translations[:, 0],
+        translations[:, 1],
+        translations[:, 2],
+        color="tab:blue",
+        linewidth=2.2,
+        alpha=0.9,
+        label="detector trajectory",
+    )
+    plot_detector_forward_directions(
+        ax=ax,
+        translations=translations,
+        rotations=rotations,
+        forward_local=forward_local,
+        stride=max(1, len(translations) // 18),
+        length=6.0,
+        color="tab:blue",
+        alpha=0.55,
+        linewidth=1.0,
+    )
+    search_outline_points = plot_search_box_outline(ax, dataset)
+    if search_outline_points is not None:
+        points_for_scale.append(search_outline_points)
+
+    ax.scatter(
+        true_source_positions[:, 0],
+        true_source_positions[:, 1],
+        true_source_positions[:, 2],
+        marker="*",
+        s=130,
+        color="black",
+        label="true sources",
+    )
+
+    if axis_limits is None:
+        set_equal_3d_axes(ax, np.vstack(points_for_scale))
+    else:
+        set_3d_axis_limits(ax, axis_limits)
+
+    ax.set_title("3D H sensitivity map")
+    ax.set_xlabel("x world [cm]")
+    ax.set_ylabel("y world [cm]")
+    ax.set_zlabel("z world [cm]")
+    ax.legend(loc="upper right")
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def render_system_matrix_measurement_3d_frames(
+    dataset,
+    candidate_positions,
+    system_matrix,
+    num_measurements,
+    num_channels,
+    frames_dir,
+    max_voxels=3000,
+    axis_limits=None,
+):
+    """Save one 3D voxel-sensitivity frame per detector measurement."""
+    import matplotlib.pyplot as plt
+
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    system_matrix = np.asarray(system_matrix, dtype=float)
+    if system_matrix.size == 0 or len(candidate_positions) == 0:
+        return []
+
+    num_rows, num_voxels = system_matrix.shape
+    expected_rows = int(num_measurements) * int(num_channels)
+    if num_rows != expected_rows:
+        raise ValueError("system_matrix row count must equal num_measurements * num_channels.")
+    if num_voxels != len(candidate_positions):
+        raise ValueError("system_matrix columns must match candidate_positions length.")
+
+    frames_dir = Path(frames_dir)
+    frames_dir.mkdir(parents=True, exist_ok=True)
+
+    measurement_maps = system_matrix.reshape(int(num_measurements), int(num_channels), num_voxels).sum(axis=1)
+    positive_values = measurement_maps[measurement_maps > 0.0]
+    if len(positive_values) == 0:
+        return []
+    color_min = float(np.log10(max(float(np.min(positive_values)), EPS)))
+    color_max = float(np.log10(max(float(np.max(positive_values)), EPS)))
+
+    translations = np.asarray(dataset["translations"], dtype=float)
+    rotations = dataset.get("rotations")
+    forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
+    true_source_positions = np.array([source["position"] for source in dataset["true_sources"]], dtype=float)
+    frame_paths = []
+
+    for measurement_index in range(int(num_measurements)):
+        sensitivity = measurement_maps[measurement_index]
+        if np.max(sensitivity) <= 0.0:
+            continue
+
+        num_to_draw = min(int(max_voxels), len(sensitivity))
+        strongest_indices = np.argsort(sensitivity)[-num_to_draw:]
+        voxel_positions = candidate_positions[strongest_indices]
+        voxel_sensitivity = sensitivity[strongest_indices]
+        normalized = np.clip(voxel_sensitivity / max(float(np.max(voxel_sensitivity)), EPS), 0.0, 1.0)
+
+        fig = plt.figure(figsize=(8, 7))
+        ax = fig.add_subplot(111, projection="3d")
+        scatter = ax.scatter(
+            voxel_positions[:, 0],
+            voxel_positions[:, 1],
+            voxel_positions[:, 2],
+            c=np.log10(np.maximum(voxel_sensitivity, EPS)),
+            s=8.0 + 48.0 * normalized,
+            cmap="plasma",
+            alpha=0.32,
+            depthshade=False,
+            vmin=color_min,
+            vmax=color_max,
+            label="measurement H sensitivity",
+        )
+        colorbar = fig.colorbar(scatter, ax=ax, shrink=0.75)
+        colorbar.set_label("log10(sum channels H)")
+
+        ax.plot(
+            translations[:, 0],
+            translations[:, 1],
+            translations[:, 2],
+            color="lightgray",
+            linewidth=1.2,
+            alpha=0.85,
+            label="full trajectory",
+        )
+        ax.scatter(
+            translations[measurement_index, 0],
+            translations[measurement_index, 1],
+            translations[measurement_index, 2],
+            color="tab:blue",
+            s=80,
+            label="current detector position",
+        )
+        plot_detector_forward_directions(
+            ax=ax,
+            translations=translations[measurement_index:measurement_index + 1],
+            rotations=rotations[measurement_index:measurement_index + 1] if rotations is not None else None,
+            forward_local=forward_local,
+            stride=1,
+            length=6.0,
+            color="tab:blue",
+            alpha=0.9,
+            linewidth=1.4,
+        )
+        ax.scatter(
+            true_source_positions[:, 0],
+            true_source_positions[:, 1],
+            true_source_positions[:, 2],
+            marker="*",
+            s=130,
+            color="black",
+            label="true sources",
+        )
+
+        if axis_limits is None:
+            points_for_scale = [translations, true_source_positions, voxel_positions]
+            set_equal_3d_axes(ax, np.vstack(points_for_scale))
+        else:
+            set_3d_axis_limits(ax, axis_limits)
+
+        ax.set_title(f"3D H map for measurement {measurement_index + 1}/{int(num_measurements)}")
+        ax.set_xlabel("x world [cm]")
+        ax.set_ylabel("y world [cm]")
+        ax.set_zlabel("z world [cm]")
+        ax.legend(loc="upper right")
+
+        frame_path = frames_dir / f"measurement_3d_{measurement_index + 1:06d}.png"
+        finalize_figure(fig, save_path=frame_path, show=False)
+        frame_paths.append(frame_path)
+
+    return frame_paths
+
+
 def _add_heatmap(fig, ax, values, title, colorbar_label, cmap="viridis", log_scale=False):
     values = np.asarray(values, dtype=float)
     plot_values = np.log10(np.maximum(values, EPS)) if log_scale else values
@@ -1108,7 +1403,6 @@ def visualize_expected_counts_breakdown(dataset, save_path=None, show=False):
 
 
 def visualize_detector_response_curves(
-    k,
     angular_peak_angle_deg,
     angular_width_deg,
     collimator_half_angle_deg,
@@ -1128,7 +1422,6 @@ def visualize_detector_response_curves(
         [
             angular_response(
                 cos_theta=cos_theta,
-                k=k,
                 angular_peak_angle_deg=angular_peak_angle_deg,
                 angular_width_deg=angular_width_deg,
             )

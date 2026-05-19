@@ -168,7 +168,6 @@ def main():
     BACKGROUND_CHANNEL_STD_PER_SECOND = 0.0
     CHANNEL_SCALE_MEAN = 1.0
     CHANNEL_SCALE_STD = 0.08
-    GENERATION_K = 4.5  # >= 0; sensible ~0..10. Higher = narrower angular response, so off-axis sources give fewer counts.
     GENERATION_DISTANCE_POWER = 1.0  # Distance falloff exponent: response ~= 1 / distance^power.
 
     # Reconstruction volume.
@@ -199,7 +198,6 @@ def main():
     # Assumed reconstruction model.
     ASSUMED_BACKGROUND_MEAN_PER_SECOND = BACKGROUND_MEAN_PER_SECOND
     ASSUMED_CHANNEL_SCALE = CHANNEL_SCALE_MEAN
-    ASSUMED_K = GENERATION_K
     ASSUMED_DISTANCE_POWER = GENERATION_DISTANCE_POWER
 
     # Streaming reconstruction algorithm.
@@ -235,7 +233,6 @@ def main():
         background_channel_std_per_second=BACKGROUND_CHANNEL_STD_PER_SECOND,
         channel_scale_mean=CHANNEL_SCALE_MEAN,
         channel_scale_std=CHANNEL_SCALE_STD,
-        generation_k=GENERATION_K,
         generation_distance_power=GENERATION_DISTANCE_POWER,
         measurement_duration_seconds=MEASUREMENT_DURATION_SECONDS,
         trajectory_center=TRAJECTORY_CENTER,
@@ -271,7 +268,6 @@ def main():
             dtype=float,
         ),
         "assumed_channel_scales": np.full(num_channels, ASSUMED_CHANNEL_SCALE, dtype=float),
-        "assumed_k": ASSUMED_K,
         "assumed_distance_power": ASSUMED_DISTANCE_POWER,
     }
 
@@ -318,7 +314,6 @@ def main():
         "BACKGROUND_CHANNEL_STD_PER_SECOND": BACKGROUND_CHANNEL_STD_PER_SECOND,
         "CHANNEL_SCALE_MEAN": CHANNEL_SCALE_MEAN,
         "CHANNEL_SCALE_STD": CHANNEL_SCALE_STD,
-        "GENERATION_K": GENERATION_K,
         "GENERATION_DISTANCE_POWER": GENERATION_DISTANCE_POWER,
         "SEARCH_START_DISTANCE": SEARCH_START_DISTANCE,
         "SEARCH_STOP_DISTANCE": SEARCH_STOP_DISTANCE,
@@ -343,7 +338,6 @@ def main():
         "ORBIT_VERTICAL_SPAN": ORBIT_VERTICAL_SPAN,
         "ASSUMED_BACKGROUND_MEAN_PER_SECOND": ASSUMED_BACKGROUND_MEAN_PER_SECOND,
         "ASSUMED_CHANNEL_SCALE": ASSUMED_CHANNEL_SCALE,
-        "ASSUMED_K": ASSUMED_K,
         "ASSUMED_DISTANCE_POWER": ASSUMED_DISTANCE_POWER,
         "STREAMING_METHOD": STREAMING_METHOD,
         "RELAXATION": RELAXATION,

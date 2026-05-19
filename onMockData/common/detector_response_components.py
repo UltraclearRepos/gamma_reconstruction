@@ -9,13 +9,13 @@ import numpy as np
 from common.geometry import EPS
 
 
-def angular_response(cos_theta, k, angular_peak_angle_deg=0.0, angular_width_deg=None):
+def angular_response(cos_theta, angular_peak_angle_deg=0.0, angular_width_deg=None):
     """
     Angular acceptance of the probe/detector head.
 
     cos_theta <= 0 means the source is behind the diode and the response is 0.
-    If angular_width_deg is not provided, this falls back to the old cos(theta)^k
-    model. Otherwise it uses a Gaussian-like angular curve that can peak away
+    If angular_width_deg is not provided, no extra intrinsic angular shaping is
+    applied. Otherwise it uses a Gaussian-like angular curve that can peak away
     from 0 degrees, which is closer to a calibrated detector response table.
     """
     cos_theta = float(cos_theta)
@@ -23,7 +23,7 @@ def angular_response(cos_theta, k, angular_peak_angle_deg=0.0, angular_width_deg
         return 0.0
 
     if angular_width_deg is None:
-        return float(np.maximum(0.0, cos_theta) ** k)
+        return 1.0
 
     theta = math.degrees(math.acos(float(np.clip(cos_theta, -1.0, 1.0))))
     peak = float(angular_peak_angle_deg)

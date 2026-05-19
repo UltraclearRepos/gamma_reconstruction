@@ -18,18 +18,12 @@ from common.detector_response_components import (
 from common.geometry import EPS
 
 
-def directional_gain(cos_theta, k):
-    """Backward-compatible wrapper for the old cos(theta)^k angular model."""
-    return angular_response(cos_theta=cos_theta, k=k)
-
-
 def compute_detector_response(
     source_position,
     geometry,
     rotations,
     translations,
     channel_scales,
-    k,
     distance_power=2.0,
     angular_peak_angle_deg=0.0,
     angular_width_deg=None,
@@ -96,7 +90,6 @@ def compute_detector_response(
                 )
                 angle_gain = angular_response(
                     cos_theta=cos_theta,
-                    k=k,
                     angular_peak_angle_deg=angular_peak_angle_deg,
                     angular_width_deg=angular_width_deg,
                 )
@@ -139,7 +132,6 @@ def compute_detector_response_torch(
     rotations,
     translations,
     channel_scales,
-    k,
     distance_power=2.0,
     angular_peak_angle_deg=0.0,
     angular_width_deg=None,
@@ -222,7 +214,7 @@ def compute_detector_response_torch(
     )
 
     if angular_width_deg is None:
-        angular_gain = positive_cos ** float(k)
+        angular_gain = 1.0
     else:
         theta_deg = torch.rad2deg(torch.acos(torch.clamp(cos_theta, min=-1.0, max=1.0)))
         peak = float(angular_peak_angle_deg)
@@ -281,7 +273,6 @@ def compute_detector_response_diagnostics(
     rotations,
     translations,
     channel_scales,
-    k,
     distance_power=2.0,
     angular_peak_angle_deg=0.0,
     angular_width_deg=None,
@@ -362,7 +353,6 @@ def compute_detector_response_diagnostics(
                 )
                 angle_gain = angular_response(
                     cos_theta=cos_theta,
-                    k=k,
                     angular_peak_angle_deg=angular_peak_angle_deg,
                     angular_width_deg=angular_width_deg,
                 )
@@ -436,7 +426,6 @@ def expected_counts(
     translations,
     channel_scales,
     backgrounds,
-    k,
     distance_power=2.0,
     angular_peak_angle_deg=0.0,
     angular_width_deg=None,
@@ -455,7 +444,6 @@ def expected_counts(
         rotations=rotations,
         translations=translations,
         channel_scales=channel_scales,
-        k=k,
         distance_power=distance_power,
         angular_peak_angle_deg=angular_peak_angle_deg,
         angular_width_deg=angular_width_deg,

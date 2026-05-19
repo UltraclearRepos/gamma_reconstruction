@@ -45,7 +45,6 @@ def reconstruct_sources(
     translations,
     assumed_backgrounds,
     assumed_channel_scales,
-    assumed_k,
     assumed_distance_power,
     sparsity_lambda,
     search_min,
@@ -83,7 +82,6 @@ def reconstruct_sources(
             translations=translations,
             assumed_backgrounds=assumed_backgrounds,
             assumed_channel_scales=assumed_channel_scales,
-            assumed_k=assumed_k,
             assumed_distance_power=assumed_distance_power,
             sparsity_lambda=sparsity_lambda,
             search_min=search_min,
@@ -111,7 +109,6 @@ def reconstruct_sources(
             translations=translations,
             assumed_backgrounds=assumed_backgrounds,
             assumed_channel_scales=assumed_channel_scales,
-            assumed_k=assumed_k,
             assumed_distance_power=assumed_distance_power,
             sparsity_lambda=sparsity_lambda,
             search_min=search_min,
@@ -145,7 +142,6 @@ def streaming_mlem_reconstruction(
     translations,
     assumed_backgrounds,
     assumed_channel_scales,
-    assumed_k,
     assumed_distance_power,
     sparsity_lambda,
     search_min,
@@ -211,7 +207,6 @@ def streaming_mlem_reconstruction(
             rotations=rotations[start_index:end_index],
             translations=translations[start_index:end_index],
             assumed_channel_scales=assumed_channel_scales,
-            assumed_k=assumed_k,
             assumed_distance_power=assumed_distance_power,
         )
         counts_block = counts[start_index:end_index].ravel()
@@ -307,7 +302,6 @@ def streaming_incremental_mlem_reconstruction(
     translations,
     assumed_backgrounds,
     assumed_channel_scales,
-    assumed_k,
     assumed_distance_power,
     sparsity_lambda,
     search_min,
@@ -378,7 +372,6 @@ def streaming_incremental_mlem_reconstruction(
             rotations=rotations[start_index:end_index],
             translations=translations[start_index:end_index],
             assumed_channel_scales=assumed_channel_scales,
-            assumed_k=assumed_k,
             assumed_distance_power=assumed_distance_power,
         )
         counts_block = counts[start_index:end_index].ravel()
