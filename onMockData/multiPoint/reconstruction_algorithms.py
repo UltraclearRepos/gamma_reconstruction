@@ -334,22 +334,6 @@ def compute_map_prior_gradient(
             gradient = gradient + beta * (activity - neighbor_mean)
         elif prior_type in ("l1", "sparsity"):
             gradient = gradient + beta
-        elif prior_type == "radial_quadratic":
-            center = torch.as_tensor(
-                prior.get("center_xy", (0.0, 0.0)),
-                dtype=TORCH_DTYPE,
-                device=device,
-            )
-            target_radius = float(prior.get("target_radius", 0.0))
-            scale = max(float(prior.get("scale", 1.0)), EPS)
-            radius = torch.linalg.norm(candidate_positions[:, :2] - center[None, :], dim=1)
-            weight = ((radius - target_radius) / scale) ** 2
-            gradient = gradient + beta * weight
-        elif prior_type == "z_quadratic":
-            target_z = float(prior.get("target_z", 0.0))
-            scale = max(float(prior.get("scale", 1.0)), EPS)
-            weight = ((candidate_positions[:, 2] - target_z) / scale) ** 2
-            gradient = gradient + beta * weight
         else:
             raise ValueError(
                 f"Unknown MAP prior type {prior_type!r}. "

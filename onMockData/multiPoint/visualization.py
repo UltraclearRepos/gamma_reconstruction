@@ -783,8 +783,9 @@ def visualize_mlem_activity(
     points_for_scale = [translations, true_source_positions]
 
     if len(activity) > 0 and np.max(activity) > 0.0:
-        num_voxels = min(max_voxels, len(activity))
-        strongest_indices = np.argsort(activity)[-num_voxels:]
+        active_indices = np.flatnonzero(activity > 0.0)
+        num_voxels = min(max_voxels, len(active_indices))
+        strongest_indices = active_indices[np.argsort(activity[active_indices])[-num_voxels:]]
         voxel_positions = candidate_positions[strongest_indices]
         voxel_activity = activity[strongest_indices]
 

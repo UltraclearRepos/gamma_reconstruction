@@ -44,7 +44,7 @@ def make_default_config():
     """Return default settings for the synthetic multi-point demo."""
     return {
         # Reconstruction method.
-        "reconstruction_method": "mlem",  # Available: "mlem", "map_em".
+        "reconstruction_method": "map_em",  # Available: "mlem", "map_em".
 
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
@@ -138,11 +138,9 @@ def make_default_config():
         "NUM_ITERATIONS": 1000,  # ML-EM iteration count.
         "HISTORY_INTERVAL": 100,  # How often ML-EM stores history snapshots.
         "MAP_PRIORS": [
-            # {"type": "smoothness", "beta": 0.1},
+            {"type": "smoothness", "beta": 0.1},
             # {"type": "l1", "beta": 0.01},
-            # {"type": "radial_quadratic", "beta": 0.01, "center_xy": (0.0, 0.0), "target_radius": 0.0, "scale": 5.0},
-            # {"type": "z_quadratic", "beta": 0.01, "target_z": 0.0, "scale": 4.0},
-            # {"type": "sieve", "sigma_cm": 0.4},
+            {"type": "sieve", "sigma_cm": 0.0},
         ],  # MAP-EM priors used only with reconstruction_method="map_em".
         # Activity-map similarity metric.
         "ACTIVITY_MAP_THRESHOLD_FRACTION": 0.25,  # Active-mask threshold as fraction of each map maximum.

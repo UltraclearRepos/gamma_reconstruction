@@ -19,3 +19,6 @@ After (with L1-like penalty): \
 ![alt text](image-2.png)
 
 6. Now algotihm needs improvement to predict sources not close to detector, but close to real source positions, when it will be close enough, we can then work on predicted radiation areas sizes.
+
+7. Instead of physics formula for expected counts for specific detector position, make measurements for different positions relative to source, and then take expected counts from this interpolated matrix. [Detection models for freehand SPECT
+reconstruction]
