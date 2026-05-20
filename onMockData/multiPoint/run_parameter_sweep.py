@@ -440,12 +440,6 @@ def summarize_run(case_index, group_name, parameter_overrides, experiment, elaps
         "scale_to_true_total": float(similarity["scale_to_true_total"]),
         "cosine_similarity": float(similarity["cosine_similarity"]),
         "pearson_correlation": float(similarity["pearson_correlation"]),
-        "active_mask_overlap": float(similarity["active_mask_overlap"]),
-        "active_mask_recall": float(similarity["active_voxel_recall"]),
-        "active_mask_precision": float(similarity["active_voxel_precision"]),
-        "true_active_voxel_count": int(similarity["true_active_voxel_count"]),
-        "reconstructed_active_voxel_count": int(similarity["reconstructed_active_voxel_count"]),
-        "activity_threshold_fraction": float(similarity["threshold_fraction"]),
     }
 
     row["fixed_overrides"] = format_fixed_overrides()
@@ -472,12 +466,6 @@ def write_rows(path, rows):
         "scale_to_true_total",
         "cosine_similarity",
         "pearson_correlation",
-        "active_mask_overlap",
-        "active_mask_recall",
-        "active_mask_precision",
-        "true_active_voxel_count",
-        "reconstructed_active_voxel_count",
-        "activity_threshold_fraction",
     ]
 
     with path.open("w", newline="", encoding="utf-8") as output_file:
@@ -514,7 +502,7 @@ def main():
             f"group={group_name}, "
             f"{format_case_parameters(display_parameters)} -> "
             f"cosine={row['cosine_similarity']:.4f}, "
-            f"mask_overlap={row['active_mask_overlap']:.4f}, "
+            f"pearson={row['pearson_correlation']:.4f}, "
             f"elapsed={elapsed_seconds:.1f}s"
         )
 

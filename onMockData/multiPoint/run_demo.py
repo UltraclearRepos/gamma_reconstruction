@@ -142,10 +142,9 @@ def make_default_config():
             # {"type": "l1", "beta": 0.01},
             {"type": "sieve", "sigma_cm": 0.0},
         ],  # MAP-EM priors used only with reconstruction_method="map_em".
-        # Activity-map similarity metric.
-        "ACTIVITY_MAP_THRESHOLD_FRACTION": 0.25,  # Active-mask threshold as fraction of each map maximum.
-        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.5,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
-        "ACTIVITY_COMPONENT_MIN_VOXELS": 3,  # Minimum connected voxels needed to report a blob.
+        # Activity-map metrics.
+        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.000001,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
+        "ACTIVITY_COMPONENT_MIN_VOXELS": 2,  # Minimum connected voxels needed to report a blob.
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,  # Print full generated measurement x channel table.
@@ -282,7 +281,6 @@ def run_experiment(overrides=None):
     activity_map_similarity = summarize_activity_map_similarity(
         true_activity=true_voxel_activity,
         reconstructed_activity=result["activity"],
-        threshold_fraction=config["ACTIVITY_MAP_THRESHOLD_FRACTION"],
     )
     activity_component_matching = summarize_activity_component_matching(
         true_activity=true_voxel_activity,
