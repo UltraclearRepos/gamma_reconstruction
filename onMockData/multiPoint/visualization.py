@@ -59,76 +59,50 @@ def plot_detector_forward_directions(
     )
 
 
-def plot_search_box_outline(
+def plot_search_cylinder_outline(
     ax,
     dataset,
     color="black",
     alpha=0.35,
     linewidth=0.9,
-    max_measurements=10,
+    num_angles=96,
 ):
-    """Draw sampled detector-relative search boxes used to select voxels."""
+    """Draw the cylindrical reconstruction volume."""
     required_keys = (
-        "geometry",
-        "rotations",
-        "translations",
-        "search_start_distance",
-        "search_stop_distance",
-        "search_width",
-        "search_height",
+        "trajectory_center",
+        "search_radius",
+        "cylinder_height",
     )
     if any(key not in dataset for key in required_keys):
         return None
 
-    rotations = np.asarray(dataset["rotations"], dtype=float)
-    translations = np.asarray(dataset["translations"], dtype=float)
-    start_distance = float(dataset["search_start_distance"])
-    stop_distance = float(dataset["search_stop_distance"])
-    half_width = 0.5 * float(dataset["search_width"])
-    half_height = 0.5 * float(dataset["search_height"])
+    center = np.asarray(dataset["trajectory_center"], dtype=float)
+    radius = float(dataset["search_radius"])
+    half_height = 0.5 * float(dataset["cylinder_height"])
+    angles = np.linspace(0.0, 2.0 * np.pi, int(num_angles), endpoint=True)
+    circle_xy = np.column_stack([np.cos(angles), np.sin(angles)]) * radius
+    lower = np.column_stack([
+        center[0] + circle_xy[:, 0],
+        center[1] + circle_xy[:, 1],
+        np.full(len(angles), center[2] - half_height),
+    ])
+    upper = lower.copy()
+    upper[:, 2] = center[2] + half_height
 
-    if len(translations) == 0:
-        return None
+    ax.plot(lower[:, 0], lower[:, 1], lower[:, 2], color=color, linestyle="--", linewidth=linewidth, alpha=alpha, label="search cylinder")
+    ax.plot(upper[:, 0], upper[:, 1], upper[:, 2], color=color, linestyle="--", linewidth=linewidth, alpha=alpha)
+    for index in np.linspace(0, len(angles) - 2, 8, dtype=int):
+        ax.plot(
+            [lower[index, 0], upper[index, 0]],
+            [lower[index, 1], upper[index, 1]],
+            [lower[index, 2], upper[index, 2]],
+            color=color,
+            linestyle="--",
+            linewidth=linewidth,
+            alpha=alpha,
+        )
 
-    num_to_draw = min(int(max_measurements), len(translations))
-    measurement_indices = np.unique(
-        np.linspace(0, len(translations) - 1, num_to_draw, dtype=int)
-    )
-    outline_points = []
-    local_corners = np.array(
-        [
-            [x, y, z]
-            for x in (-half_width, half_width)
-            for y in (-half_height, half_height)
-            for z in (start_distance, stop_distance)
-        ],
-        dtype=float,
-    )
-    edges = [
-        (0, 1), (0, 2), (1, 3), (2, 3),
-        (4, 5), (4, 6), (5, 7), (6, 7),
-        (0, 4), (1, 5), (2, 6), (3, 7),
-    ]
-
-    for draw_index, measurement_index in enumerate(measurement_indices):
-        rotation = rotations[measurement_index]
-        detector_position = translations[measurement_index]
-        world_corners = detector_position[np.newaxis, :] + local_corners @ rotation.T
-        for edge_index, (start, end) in enumerate(edges):
-            ax.plot(
-                world_corners[[start, end], 0],
-                world_corners[[start, end], 1],
-                world_corners[[start, end], 2],
-                color=color,
-                linestyle="--",
-                linewidth=linewidth,
-                alpha=alpha,
-                label="search box outline" if draw_index == 0 and edge_index == 0 else None,
-            )
-
-        outline_points.append(world_corners)
-
-    return np.vstack(outline_points) if outline_points else None
+    return np.vstack([lower, upper])
 
 
 def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limits=None):
@@ -328,7 +302,7 @@ def visualize_true_voxel_activity(
         alpha=0.65,
         linewidth=1.0,
     )
-    search_outline_points = plot_search_box_outline(ax, dataset)
+    search_outline_points = plot_search_cylinder_outline(ax, dataset)
     if search_outline_points is not None:
         points_for_scale.append(search_outline_points)
 
@@ -416,7 +390,7 @@ def visualize_activity_map_comparison(
             label="detector trajectory",
         )
         if show_search_bounds:
-            search_outline_points = plot_search_box_outline(ax, dataset)
+            search_outline_points = plot_search_cylinder_outline(ax, dataset)
             if search_outline_points is not None:
                 points_for_scale.append(search_outline_points)
         if axis_limits is None:
@@ -546,6 +520,48 @@ def plot_thresholded_activity_panel(
     ax.set_ylabel("y world [cm]")
     ax.set_zlabel("z world [cm]")
     ax.legend(loc="upper right")
+
+
+def render_thresholded_activity_history_frames(
+    dataset,
+    candidate_positions,
+    true_activity,
+    activity_history,
+    history,
+    threshold_fraction,
+    frames_dir,
+    axis_limits=None,
+):
+    """Save one thresholded true/reconstructed voxel panel per reconstruction snapshot."""
+    import matplotlib.pyplot as plt
+
+    frames_dir = Path(frames_dir)
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    frame_paths = []
+    num_frames = len(activity_history)
+
+    for frame_index, (activity_snapshot, history_item) in enumerate(
+        zip(activity_history, history),
+        start=1,
+    ):
+        iteration = int(history_item.get("iteration", frame_index))
+        fig = plt.figure(figsize=(8, 7))
+        ax = fig.add_subplot(111, projection="3d")
+        plot_thresholded_activity_panel(
+            ax=ax,
+            dataset=dataset,
+            candidate_positions=candidate_positions,
+            true_activity=true_activity,
+            reconstructed_activity=activity_snapshot,
+            threshold_fraction=threshold_fraction,
+            axis_limits=axis_limits,
+            title=f"Voxels above blob threshold\nframe {frame_index}/{num_frames} | iteration {iteration}",
+        )
+        frame_path = frames_dir / f"thresholded_iteration_{iteration:06d}.png"
+        finalize_figure(fig, save_path=frame_path, show=False)
+        frame_paths.append(frame_path)
+
+    return frame_paths
 
 
 def plot_component_box(
@@ -1061,7 +1077,7 @@ def visualize_system_matrix_sensitivity_3d(
         alpha=0.55,
         linewidth=1.0,
     )
-    search_outline_points = plot_search_box_outline(ax, dataset)
+    search_outline_points = plot_search_cylinder_outline(ax, dataset)
     if search_outline_points is not None:
         points_for_scale.append(search_outline_points)
 

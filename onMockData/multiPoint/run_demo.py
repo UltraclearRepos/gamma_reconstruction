@@ -23,6 +23,7 @@ from metrics import (
 from simulation import expected_counts_multi_source, generate_synthetic_dataset
 from visualization import (
     create_gif_from_frames,
+    render_thresholded_activity_history_frames,
     visualize_detector_response_curves,
     visualize_expected_counts_breakdown,
     visualize_activity_map_comparison,
@@ -43,16 +44,16 @@ def make_default_config():
     """Return default settings for the synthetic multi-point demo."""
     return {
         # Reconstruction method.
-        "reconstruction_method": "mlem",  # Available: "mlem".
+        "reconstruction_method": "mlem",  # Available: "mlem", "map_em".
 
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
         "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
-        "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
-            {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
-            {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
-            # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
-        ],
+        # "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
+        #     {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
+        #     {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
+        #     # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
+        # ],
         # "TRUE_SOURCE_SPECS": [
         #     # Lewy płat: głębiej, rozmyty
         #     {"position": (-2.5, 1.5, -1.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
@@ -61,14 +62,14 @@ def make_default_config():
         #     # "Gorący guzek": bardzo blisko skóry (płytko), mały, wysoka aktywność
         #     {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.4},
         # ],
-        # "TRUE_SOURCE_SPECS": [
-        #     # Główne źródło ukryte głęboko w tkance
-        #     {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
-        #     # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
-        #     {"position": (0.0, 6.0, 0.0), "strength_per_second": 2000.0, "spread_cm": 0.5},
-        #     # Punkt referencyjny z boku dla oceny ogólnej geometrii
-        #     {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
-        # ],
+        "TRUE_SOURCE_SPECS": [
+            # Główne źródło ukryte głęboko w tkance
+            {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
+            # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
+            {"position": (0.0, 6.0, 0.0), "strength_per_second": 2000.0, "spread_cm": 0.5},
+            # Punkt referencyjny z boku dla oceny ogólnej geometrii
+            {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
+        ],
         # "TRUE_SOURCE_SPECS": [
         #     # Masywne, rozmyte źródło centralne
         #     {"position": (-1.0, 0.0, 0.0), "strength_per_second": 20000.0, "spread_cm": 2.0},
@@ -86,7 +87,7 @@ def make_default_config():
         "CHANNEL_SCALE_STD": 0.08,  # Channel-to-channel sensitivity mismatch std.
         "GENERATION_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
         "GENERATION_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
-        "GENERATION_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
+        "GENERATION_ANGULAR_WIDTH_DEG": 20.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
         "GENERATION_COLLIMATOR_HALF_ANGLE_DEG": 15.0,  # Collimator cone half-angle [deg]; narrow probe 8-20, broad/weak collimation 20-35.
         "GENERATION_COLLIMATOR_EDGE_WIDTH_DEG": 3.0,  # Softness of collimator cutoff [deg]; sharp lead collimator 1-4, soft/uncertain 4-8.
         "GENERATION_COLLIMATOR_LEAKAGE": 0.002,  # Side-response floor from imperfect shielding/scatter; ideal 0, realistic test 0.001-0.02.
@@ -96,11 +97,11 @@ def make_default_config():
         "GENERATION_RESPONSE_SCALE": 10000,  # Calibration scale from source units to counts; increase to amplify signal, usually test 1-1e5.
 
         # Assumed reconstruction model.
-        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Background rate used by reconstruction model.
+        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1100.0,  # Background rate used by reconstruction model.
         "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
         "ASSUMED_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
         "ASSUMED_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
-        "ASSUMED_ANGULAR_WIDTH_DEG": 35.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
+        "ASSUMED_ANGULAR_WIDTH_DEG": 20.0,  # Intrinsic angular width before collimator [deg]; broad detector 30-80, narrow crystal response 15-35.
         "ASSUMED_COLLIMATOR_HALF_ANGLE_DEG": 15.0,  # Collimator cone half-angle assumed by reconstruction [deg]; try 10-25.
         "ASSUMED_COLLIMATOR_EDGE_WIDTH_DEG": 3.0,  # Assumed cutoff softness [deg]; smaller = stronger angular rejection.
         "ASSUMED_COLLIMATOR_LEAKAGE": 0.002,  # Assumed side-response floor; increase only if measured side lobes are visible.
@@ -110,11 +111,8 @@ def make_default_config():
         "ASSUMED_RESPONSE_SCALE": 10000,  # Calibration scale assumed by reconstruction; keep near GENERATION scale in matched simulations, usually test 1-1e5.
 
         # Reconstruction volume.
-        "SEARCH_START_DISTANCE": 2.0,  # Start searching this far from each detector channel along detector forward axis [cm].
-        "SEARCH_STOP_DISTANCE": 20.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
-        "SEARCH_WIDTH": 10.0,  # Full width of the detector-relative rectangular search box [cm].
-        "SEARCH_HEIGHT": 5.0,  # Full height of the detector-relative rectangular search box [cm].
-        # The dataset derives the axis-aligned reconstruction box from the union of detector-relative search boxes.
+        "SEARCH_RADIUS": 10.0,  # Reconstruction cylinder radius around TRAJECTORY_CENTER [cm].
+        "CYLINDER_HEIGHT": 12.0,  # Reconstruction cylinder height along world Z [cm].
         "VOXEL_SIZE_CM": 0.75,  # Reconstruction voxel spacing [cm]; smaller = denser 3D activity grid.
 
         # Mock detector trajectory.
@@ -132,18 +130,20 @@ def make_default_config():
 
         "ORIENTATION_MODE": "towards_target",  # "fixed" or "towards_target"; fixed mimics a probe swept over skin while pointing inward.
         "FIXED_VIEW_DIRECTION": (0, 1, 0),  # fixed mode only: detector forward direction in world coordinates.
-        "FIXED_SWEEP_Z_RANGE_DEG": 15.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
-        "FIXED_SWEEP_X_RANGE_DEG": 5.0,  # random up/down angle range around world X axis, sampled as +/- this value.
+        "FIXED_SWEEP_Z_RANGE_DEG": 5.0,  # random left/right angle range around world Z axis, sampled as +/- this value.
+        "FIXED_SWEEP_X_RANGE_DEG": 15.0,  # random up/down angle range around world X axis, sampled as +/- this value.
         "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
-        "NUM_ITERATIONS": 100,  # ML-EM iteration count.
-        "HISTORY_INTERVAL": 10,  # How often ML-EM stores history snapshots.
-        "SPARSITY_LAMBDA": 0.0,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
-        "SIEVE_SIGMA_CM": 0.6,  # Gaussian 3D sieve smoothing after each ML-EM iteration; 0 disables.
-        "MIN_COVERAGE_MEASUREMENTS": 8,  # Keep only voxels seen by at least this many detector positions.
-        "COVERAGE_RELATIVE_THRESHOLD": 0.05,  # Measurement counts as seeing a voxel above this fraction of its max response.
-
+        "NUM_ITERATIONS": 1000,  # ML-EM iteration count.
+        "HISTORY_INTERVAL": 100,  # How often ML-EM stores history snapshots.
+        "MAP_PRIORS": [
+            # {"type": "smoothness", "beta": 0.1},
+            # {"type": "l1", "beta": 0.01},
+            # {"type": "radial_quadratic", "beta": 0.01, "center_xy": (0.0, 0.0), "target_radius": 0.0, "scale": 5.0},
+            # {"type": "z_quadratic", "beta": 0.01, "target_z": 0.0, "scale": 4.0},
+            # {"type": "sieve", "sigma_cm": 0.4},
+        ],  # MAP-EM priors used only with reconstruction_method="map_em".
         # Activity-map similarity metric.
         "ACTIVITY_MAP_THRESHOLD_FRACTION": 0.25,  # Active-mask threshold as fraction of each map maximum.
         "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.5,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
@@ -217,10 +217,8 @@ def run_experiment(overrides=None):
         generation_response_scale=config["GENERATION_RESPONSE_SCALE"],
         measurement_duration_seconds=config["MEASUREMENT_DURATION_SECONDS"],
         trajectory_center=config["TRAJECTORY_CENTER"],
-        search_start_distance=config["SEARCH_START_DISTANCE"],
-        search_stop_distance=config["SEARCH_STOP_DISTANCE"],
-        search_width=config["SEARCH_WIDTH"],
-        search_height=config["SEARCH_HEIGHT"],
+        search_radius=config["SEARCH_RADIUS"],
+        cylinder_height=config["CYLINDER_HEIGHT"],
         trajectory_mode=config["TRAJECTORY_MODE"],
         angular_jitter_deg=config["ANGULAR_JITTER_DEG"],
         lateral_span=config["LATERAL_SPAN"],
@@ -268,20 +266,14 @@ def run_experiment(overrides=None):
         rotations=dataset["rotations"],
         translations=dataset["translations"],
         **assumed_model,
-        search_min=dataset["search_min"],
-        search_max=dataset["search_max"],
-        search_start_distance=dataset["search_start_distance"],
-        search_stop_distance=dataset["search_stop_distance"],
-        search_width=dataset["search_width"],
-        search_height=dataset["search_height"],
+        trajectory_center=dataset["trajectory_center"],
+        search_radius=dataset["search_radius"],
+        cylinder_height=dataset["cylinder_height"],
         method=config["reconstruction_method"],
         voxel_size_cm=config["VOXEL_SIZE_CM"],
         num_iterations=config["NUM_ITERATIONS"],
         history_interval=config["HISTORY_INTERVAL"],
-        sparsity_lambda=config["SPARSITY_LAMBDA"],
-        sieve_sigma_cm=config["SIEVE_SIGMA_CM"],
-        min_coverage_measurements=config["MIN_COVERAGE_MEASUREMENTS"],
-        coverage_relative_threshold=config["COVERAGE_RELATIVE_THRESHOLD"],
+        map_priors=config["MAP_PRIORS"],
     )
     reconstruction_elapsed_seconds = perf_counter() - reconstruction_start_time
     true_voxel_activity = voxelize_true_source_activity(
@@ -368,16 +360,8 @@ def print_summary(dataset):
     print(f"Measurement duration [s]:   {dataset['measurement_duration_seconds']:.2f}")
     print(f"Background mean [/s]:       {dataset['background_mean_per_second']:.1f}")
     print(f"Background mean / sample:   {dataset['background_mean']:.1f}")
-    print(
-        "Search distance window [cm]: "
-        f"{dataset['search_start_distance']:.2f} -> {dataset['search_stop_distance']:.2f} "
-        f"(length {dataset['search_distance_window']:.2f})"
-    )
-    print(
-        "Search box half-size [cm]:   "
-        f"width={dataset['search_width']:.2f}, "
-        f"height={dataset['search_height']:.2f}"
-    )
+    print(f"Search cylinder radius [cm]: {dataset['search_radius']:.2f}")
+    print(f"Search cylinder height [cm]: {dataset['cylinder_height']:.2f}")
     print(f"Search min [cm]:            {np.round(dataset['search_min'], 4)}")
     print(f"Search max [cm]:            {np.round(dataset['search_max'], 4)}")
 
@@ -411,25 +395,17 @@ def main():
     print()
     print(f"Reconstruction time [s]: {experiment['reconstruction_elapsed_seconds']:.3f}")
     print(f"Reconstruction device:   {result['torch_device']}")
-    coverage = result.get("coverage", {})
-    if coverage:
-        print(
-            "Coverage mask:          "
-            f"before={coverage['total_voxels_before']}, "
-            f"kept={coverage['kept_voxels']}, "
-            f"removed={coverage['removed_voxels']} "
-            f"({100.0 * coverage['removed_voxel_fraction']:.1f}%), "
-            f"min/mean/max={coverage['coverage_count_min']} / "
-            f"{coverage['coverage_count_mean']:.2f} / "
-            f"{coverage['coverage_count_max']} measurements"
-        )
     timings = result.get("timings", {})
     if timings:
+        em_iteration_seconds = timings.get(
+            "mlem_iterations_seconds",
+            timings.get("mapem_iterations_seconds", 0.0),
+        )
         print(
             "Reconstruction timing [s]: "
             f"H={timings['system_matrix_seconds']:.3f}, "
             f"transfer={timings['transfer_seconds']:.3f}, "
-            f"MLEM={timings['mlem_iterations_seconds']:.3f}"
+            f"EM={em_iteration_seconds:.3f}"
         )
     print_activity_map_similarity_summary(experiment["activity_map_similarity"])
     print_activity_component_matching_summary(experiment["activity_component_matching"])
@@ -437,9 +413,11 @@ def main():
     output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
     forward_model_dir = output_dir / "forward_model"
     history_3d_dir = output_dir / "mlem_activity_history_3d"
+    thresholded_history_dir = output_dir / "mlem_thresholded_activity_history_3d"
     h_frames_3d_dir = forward_model_dir / "system_matrix_H_measurements_3d"
     forward_model_dir.mkdir(parents=True, exist_ok=True)
     history_3d_dir.mkdir(parents=True, exist_ok=True)
+    thresholded_history_dir.mkdir(parents=True, exist_ok=True)
     h_frames_3d_dir.mkdir(parents=True, exist_ok=True)
     max_activity_for_visualization = max(
         float(np.max(activity_snapshot))
@@ -624,6 +602,23 @@ def main():
         frames_dir=history_3d_dir,
         output_path=output_dir / "mlem_activity_history_3d.gif",
         pattern="iteration_*.png",
+        fps=config["GIF_FPS"],
+    )
+    clear_existing_frames(thresholded_history_dir, "thresholded_iteration_*.png")
+    render_thresholded_activity_history_frames(
+        dataset=dataset,
+        candidate_positions=result["candidate_positions"],
+        true_activity=true_voxel_activity,
+        activity_history=result["activity_history"],
+        history=result["history"],
+        threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
+        frames_dir=thresholded_history_dir,
+        axis_limits=config["AXIS_LIMITS_3D"],
+    )
+    create_gif_from_frames(
+        frames_dir=thresholded_history_dir,
+        output_path=output_dir / "mlem_thresholded_activity_history_3d.gif",
+        pattern="thresholded_iteration_*.png",
         fps=config["GIF_FPS"],
     )
 

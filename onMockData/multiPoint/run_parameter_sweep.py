@@ -306,7 +306,7 @@ SWEEP_GROUPS = [
 # All non-swept run_demo settings live here so every run is explicit and every
 # setting can be written to the output CSV.
 FIXED_OVERRIDES = {
-    "reconstruction_method": "mlem",  # Available: "mlem".
+    "reconstruction_method": "mlem",  # Available: "mlem", "map_em".
     "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
     "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
     "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and source strengths [/s].
@@ -314,10 +314,8 @@ FIXED_OVERRIDES = {
     ],
     "NUM_CHANNELS": 16,  # Number of detector channels.
     "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
-    "SEARCH_START_DISTANCE": 40.0,  # Start searching this far from each detector channel along detector forward axis [cm].
-    "SEARCH_STOP_DISTANCE": 140.0,  # Stop searching this far from each detector channel; window length = stop - start [cm].
-    "SEARCH_WIDTH": 60.0,  # Full width of the detector-relative rectangular search box [cm].
-    "SEARCH_HEIGHT": 36.0,  # Full height of the detector-relative rectangular search box [cm].
+    "SEARCH_RADIUS": 90.0,  # Reconstruction cylinder radius around TRAJECTORY_CENTER [cm].
+    "CYLINDER_HEIGHT": 36.0,  # Reconstruction cylinder height along world Z [cm].
     "VOXEL_SIZE_CM": 8.0,  # Reconstruction voxel spacing [cm]; smaller = denser 3D activity grid.
     "TRAJECTORY_MODE": "grid",  # "grid" or "around_center".
     "LATERAL_SPAN": 60.0,  # grid only: max left/right position offset from TRAJECTORY_CENTER [cm].
@@ -334,7 +332,6 @@ FIXED_OVERRIDES = {
     "TRAJECTORY_CENTER": (0.0, 0.0, 0.0),  # Reference center of the detector trajectory [cm].
     "NUM_ITERATIONS": 10000,  # ML-EM iteration count. Set back to 10000 if you want to match run_demo exactly.
     "HISTORY_INTERVAL": 1000,  # How often ML-EM stores history snapshots.
-    "SPARSITY_LAMBDA": 0.0,  # L1-like activity penalty; increase to suppress diffuse weak voxels.
     "PRINT_GENERATED_COUNTS_TABLE": False,  # Sweep runs skip the long generated-count table.
     "UPDATE_FRAME_MAX_VOXELS": 1000,  # Max strongest voxels plotted in one history frame.
     "GIF_FPS": 1.0,  # GIF frame rate if visualizations are enabled elsewhere.

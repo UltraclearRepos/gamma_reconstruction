@@ -7,7 +7,7 @@ import torch
 
 from common.forward_model import compute_detector_response_torch
 from common.geometry import (
-    derive_search_volume_from_detector_box,
+    derive_search_volume_from_trajectory_cylinder,
     EPS,
     make_detector_geometry,
     make_detector_trajectory,
@@ -177,10 +177,8 @@ def generate_synthetic_dataset(
     generation_distance_power,
     measurement_duration_seconds,
     trajectory_center,
-    search_start_distance,
-    search_stop_distance,
-    search_width,
-    search_height,
+    search_radius,
+    cylinder_height,
     trajectory_mode,
     angular_jitter_deg,
     lateral_span,
@@ -307,14 +305,10 @@ def generate_synthetic_dataset(
         fixed_sweep_z_range_deg=fixed_sweep_z_range_deg,
         fixed_sweep_x_range_deg=fixed_sweep_x_range_deg,
     )
-    search_volume = derive_search_volume_from_detector_box(
-        geometry=geometry,
-        rotations=rotations,
-        translations=translations,
-        search_start_distance=search_start_distance,
-        search_stop_distance=search_stop_distance,
-        search_width=search_width,
-        search_height=search_height,
+    search_volume = derive_search_volume_from_trajectory_cylinder(
+        trajectory_center=trajectory_center,
+        search_radius=search_radius,
+        cylinder_height=cylinder_height,
     )
 
     mean_counts = expected_counts_multi_source(
@@ -348,11 +342,8 @@ def generate_synthetic_dataset(
         "trajectory_center": trajectory_center,
         "search_min": np.array(search_volume["search_min"], dtype=float),
         "search_max": np.array(search_volume["search_max"], dtype=float),
-        "search_start_distance": search_volume["search_start_distance"],
-        "search_stop_distance": search_volume["search_stop_distance"],
-        "search_distance_window": search_volume["search_distance_window"],
-        "search_width": search_volume["search_width"],
-        "search_height": search_volume["search_height"],
+        "search_radius": search_volume["search_radius"],
+        "cylinder_height": search_volume["cylinder_height"],
         "true_backgrounds": true_backgrounds,
         "true_channel_scales": true_channel_scales,
         "generation_distance_power": generation_distance_power,

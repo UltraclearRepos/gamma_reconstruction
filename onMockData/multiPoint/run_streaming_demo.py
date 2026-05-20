@@ -171,10 +171,8 @@ def main():
     GENERATION_DISTANCE_POWER = 1.0  # Distance falloff exponent: response ~= 1 / distance^power.
 
     # Reconstruction volume.
-    SEARCH_START_DISTANCE = 10.0  # Start searching this far from each detector channel along detector forward axis [cm].
-    SEARCH_STOP_DISTANCE = 120.0  # Stop searching this far from each detector channel; window length = stop - start [cm].
-    SEARCH_WIDTH = 45.0  # Full width of the detector-relative rectangular search box [cm].
-    SEARCH_HEIGHT = 36.0  # Full height of the detector-relative rectangular search box [cm].
+    SEARCH_RADIUS = 55.0
+    CYLINDER_HEIGHT = 36.0
     VOXEL_SIZE_CM = 8.0
 
     # Mock detector trajectory.
@@ -236,10 +234,8 @@ def main():
         generation_distance_power=GENERATION_DISTANCE_POWER,
         measurement_duration_seconds=MEASUREMENT_DURATION_SECONDS,
         trajectory_center=TRAJECTORY_CENTER,
-        search_start_distance=SEARCH_START_DISTANCE,
-        search_stop_distance=SEARCH_STOP_DISTANCE,
-        search_width=SEARCH_WIDTH,
-        search_height=SEARCH_HEIGHT,
+        search_radius=SEARCH_RADIUS,
+        cylinder_height=CYLINDER_HEIGHT,
         trajectory_mode=TRAJECTORY_MODE,
         angular_jitter_deg=ANGULAR_JITTER_DEG,
         lateral_span=LATERAL_SPAN,
@@ -277,12 +273,9 @@ def main():
         rotations=dataset["rotations"],
         translations=dataset["translations"],
         **assumed_model,
-        search_min=dataset["search_min"],
-        search_max=dataset["search_max"],
-        search_start_distance=dataset["search_start_distance"],
-        search_stop_distance=dataset["search_stop_distance"],
-        search_width=dataset["search_width"],
-        search_height=dataset["search_height"],
+        trajectory_center=dataset["trajectory_center"],
+        search_radius=dataset["search_radius"],
+        cylinder_height=dataset["cylinder_height"],
         true_sources=dataset["true_sources"],
         method=STREAMING_METHOD,
         voxel_size_cm=VOXEL_SIZE_CM,
@@ -315,10 +308,8 @@ def main():
         "CHANNEL_SCALE_MEAN": CHANNEL_SCALE_MEAN,
         "CHANNEL_SCALE_STD": CHANNEL_SCALE_STD,
         "GENERATION_DISTANCE_POWER": GENERATION_DISTANCE_POWER,
-        "SEARCH_START_DISTANCE": SEARCH_START_DISTANCE,
-        "SEARCH_STOP_DISTANCE": SEARCH_STOP_DISTANCE,
-        "SEARCH_WIDTH": SEARCH_WIDTH,
-        "SEARCH_HEIGHT": SEARCH_HEIGHT,
+        "SEARCH_RADIUS": SEARCH_RADIUS,
+        "CYLINDER_HEIGHT": CYLINDER_HEIGHT,
         "VOXEL_SIZE_CM": VOXEL_SIZE_CM,
         "TRAJECTORY_MODE": TRAJECTORY_MODE,
         "ORIENTATION_MODE": ORIENTATION_MODE,
