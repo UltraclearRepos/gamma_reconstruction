@@ -306,7 +306,7 @@ SWEEP_GROUPS = [
 # All non-swept run_demo settings live here so every run is explicit and every
 # setting can be written to the output CSV.
 FIXED_OVERRIDES = {
-    "reconstruction_method": "mlem",  # Available: "mlem", "map_em".
+    "reconstruction_method": "mlem",  # Available: "mlem", "map_em", "bsrem".
     "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
     "NUM_MEASUREMENTS": 50,  # Number of detector positions / generated measurements.
     "TRUE_SOURCE_SPECS": [  # Ground-truth point source positions [cm] and source strengths [/s].

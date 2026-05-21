@@ -44,7 +44,7 @@ def make_default_config():
     """Return default settings for the synthetic multi-point demo."""
     return {
         # Reconstruction method.
-        "reconstruction_method": "map_em",  # Available: "mlem", "map_em".
+        "reconstruction_method": "map_em",  # Available: "mlem", "map_em", "bsrem".
 
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
@@ -137,11 +137,17 @@ def make_default_config():
         # Reconstruction algorithm.
         "NUM_ITERATIONS": 1000,  # ML-EM iteration count.
         "HISTORY_INTERVAL": 100,  # How often ML-EM stores history snapshots.
-        "MAP_PRIORS": [
-            {"type": "smoothness", "beta": 0.1},
-            # {"type": "l1", "beta": 0.01},
-            {"type": "sieve", "sigma_cm": 0.0},
-        ],  # MAP-EM priors used only with reconstruction_method="map_em".
+        "RECONSTRUCTION_PRIORS": [
+            {"type": "smoothness", "beta": 0.1},  # Penalizes differences from the six-neighbor local mean; smooths noisy voxel spikes.
+            # {"type": "huber", "beta": 0.1, "delta": 1.0},  # Smooths small neighbor differences while preserving sharper blob edges than quadratic smoothing.
+            # {"type": "rdp", "beta": 0.1, "gamma": 1.0},  # Relative Difference Penalty; smooths weak/noisy regions while being gentler near strong activity contrast.
+            # {"type": "l1", "beta": 0.01},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
+        ],  # Priors shared by MAP-EM and BSREM.
+        "RECONSTRUCTION_SIEVE_SIGMA_CM": 0.0,  # Optional post-update Gaussian sieve filter; 0 disables it.
+        "BSREM_NUM_SUBSETS": 8,  # Ordered subsets per BSREM iteration.
+        "BSREM_RELAXATION_INITIAL": 1.0,  # Initial BSREM relaxation step.
+        "BSREM_RELAXATION_DECAY": 0.01,  # Larger values damp later BSREM iterations more strongly.
+        "BSREM_RELAXATION_POWER": 1.0,  # Exponent used by the BSREM relaxation schedule.
         # Activity-map metrics.
         "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.5,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
         "ACTIVITY_COMPONENT_MIN_VOXELS": 2,  # Minimum connected voxels needed to report a blob.
@@ -270,7 +276,12 @@ def run_experiment(overrides=None):
         voxel_size_cm=config["VOXEL_SIZE_CM"],
         num_iterations=config["NUM_ITERATIONS"],
         history_interval=config["HISTORY_INTERVAL"],
-        map_priors=config["MAP_PRIORS"],
+        reconstruction_priors=config["RECONSTRUCTION_PRIORS"],
+        reconstruction_sieve_sigma_cm=config["RECONSTRUCTION_SIEVE_SIGMA_CM"],
+        bsrem_num_subsets=config["BSREM_NUM_SUBSETS"],
+        bsrem_relaxation_initial=config["BSREM_RELAXATION_INITIAL"],
+        bsrem_relaxation_decay=config["BSREM_RELAXATION_DECAY"],
+        bsrem_relaxation_power=config["BSREM_RELAXATION_POWER"],
     )
     reconstruction_elapsed_seconds = perf_counter() - reconstruction_start_time
     true_voxel_activity = voxelize_true_source_activity(

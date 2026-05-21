@@ -81,7 +81,12 @@ def reconstruct_sources(
     voxel_size_cm=1.0,
     num_iterations=40,
     history_interval=5,
-    map_priors=None,
+    reconstruction_priors=None,
+    reconstruction_sieve_sigma_cm=0.0,
+    bsrem_num_subsets=8,
+    bsrem_relaxation_initial=1.0,
+    bsrem_relaxation_decay=0.01,
+    bsrem_relaxation_power=1.0,
 ):
     """
     Run one multi-source reconstruction method using a plain if/elif dispatcher.
@@ -138,12 +143,45 @@ def reconstruct_sources(
             voxel_size_cm=voxel_size_cm,
             num_iterations=num_iterations,
             history_interval=history_interval,
-            map_priors=map_priors,
+            reconstruction_priors=reconstruction_priors,
+            reconstruction_sieve_sigma_cm=reconstruction_sieve_sigma_cm,
+        )
+
+    if method == "bsrem":
+        return bsrem_reconstruction(
+            counts=counts,
+            geometry=geometry,
+            rotations=rotations,
+            translations=translations,
+            assumed_backgrounds=assumed_backgrounds,
+            assumed_channel_scales=assumed_channel_scales,
+            assumed_distance_power=assumed_distance_power,
+            assumed_angular_peak_angle_deg=assumed_angular_peak_angle_deg,
+            assumed_angular_width_deg=assumed_angular_width_deg,
+            assumed_collimator_half_angle_deg=assumed_collimator_half_angle_deg,
+            assumed_collimator_edge_width_deg=assumed_collimator_edge_width_deg,
+            assumed_collimator_leakage=assumed_collimator_leakage,
+            assumed_skin_thickness_cm=assumed_skin_thickness_cm,
+            assumed_skin_mu_per_cm=assumed_skin_mu_per_cm,
+            assumed_detector_intrinsic_efficiency=assumed_detector_intrinsic_efficiency,
+            assumed_response_scale=assumed_response_scale,
+            trajectory_center=trajectory_center,
+            search_radius=search_radius,
+            cylinder_height=cylinder_height,
+            voxel_size_cm=voxel_size_cm,
+            num_iterations=num_iterations,
+            history_interval=history_interval,
+            reconstruction_priors=reconstruction_priors,
+            reconstruction_sieve_sigma_cm=reconstruction_sieve_sigma_cm,
+            num_subsets=bsrem_num_subsets,
+            relaxation_initial=bsrem_relaxation_initial,
+            relaxation_decay=bsrem_relaxation_decay,
+            relaxation_power=bsrem_relaxation_power,
         )
 
     raise ValueError(
         f"Unknown multi-source reconstruction method '{method}'. "
-        "Use: mlem, map_em."
+        "Use: mlem, map_em, bsrem."
     )
 
 
@@ -300,27 +338,141 @@ def neighborhood_mean_activity(
     return torch.where(has_neighbors, mean_flat, activity)
 
 
-def compute_map_prior_gradient(
+def huber_pair_gradient(left, right, delta):
+    """Return Huber prior gradients for one pair of neighboring voxels."""
+    delta = float(delta)
+    if delta <= 0.0:
+        raise ValueError("Huber prior delta must be > 0.")
+
+    difference = left - right
+    left_gradient = difference / torch.sqrt(1.0 + (difference / delta) ** 2)
+    return left_gradient, -left_gradient
+
+
+def rdp_pair_gradient(left, right, gamma):
+    """Return Relative Difference Penalty gradients for one neighboring voxel pair."""
+    gamma = float(gamma)
+    if gamma < 0.0:
+        raise ValueError("RDP prior gamma must be >= 0.")
+
+    difference = left - right
+    abs_difference = torch.abs(difference)
+    sign_difference = torch.sign(difference)
+    denominator = torch.clamp(left + right + gamma * abs_difference, min=EPS)
+    squared_difference = difference * difference
+    left_gradient = (
+        2.0 * difference * denominator
+        - squared_difference * (1.0 + gamma * sign_difference)
+    ) / (denominator * denominator)
+    right_gradient = (
+        -2.0 * difference * denominator
+        - squared_difference * (1.0 - gamma * sign_difference)
+    ) / (denominator * denominator)
+    return left_gradient, right_gradient
+
+
+def pairwise_neighbor_prior_gradient(
+    activity,
+    candidate_flat_indices,
+    grid_shape,
+    device,
+    pair_gradient_fn,
+    **pair_gradient_kwargs,
+):
+    """Return pairwise six-neighbor prior gradient for candidate voxels."""
+    flat_indices = torch.as_tensor(candidate_flat_indices, dtype=torch.long, device=device)
+    num_grid_points = int(np.prod(grid_shape))
+    activity_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
+    mask_flat = torch.zeros(num_grid_points, dtype=torch.bool, device=device)
+    activity_flat[flat_indices] = activity
+    mask_flat[flat_indices] = True
+
+    volume = activity_flat.view(*grid_shape)
+    mask = mask_flat.view(*grid_shape)
+    gradient_volume = torch.zeros_like(volume)
+
+    def add_edge_gradient(left_slices, right_slices):
+        left_mask = mask[left_slices]
+        right_mask = mask[right_slices]
+        valid = left_mask & right_mask
+        if not torch.any(valid):
+            return
+
+        left = volume[left_slices]
+        right = volume[right_slices]
+        left_gradient, right_gradient = pair_gradient_fn(
+            left,
+            right,
+            **pair_gradient_kwargs,
+        )
+
+        gradient_left = gradient_volume[left_slices]
+        gradient_right = gradient_volume[right_slices]
+        gradient_left[valid] = gradient_left[valid] + left_gradient[valid]
+        gradient_right[valid] = gradient_right[valid] + right_gradient[valid]
+
+    add_edge_gradient((slice(0, -1), slice(None), slice(None)), (slice(1, None), slice(None), slice(None)))
+    add_edge_gradient((slice(None), slice(0, -1), slice(None)), (slice(None), slice(1, None), slice(None)))
+    add_edge_gradient((slice(None), slice(None), slice(0, -1)), (slice(None), slice(None), slice(1, None)))
+
+    return gradient_volume.reshape(-1)[flat_indices]
+
+
+def huber_neighbor_prior_gradient(
+    activity,
+    candidate_flat_indices,
+    grid_shape,
+    device,
+    delta=1.0,
+):
+    """Return six-neighbor Huber prior gradient for candidate voxels."""
+    return pairwise_neighbor_prior_gradient(
+        activity=activity,
+        candidate_flat_indices=candidate_flat_indices,
+        grid_shape=grid_shape,
+        device=device,
+        pair_gradient_fn=huber_pair_gradient,
+        delta=delta,
+    )
+
+
+def rdp_neighbor_prior_gradient(
+    activity,
+    candidate_flat_indices,
+    grid_shape,
+    device,
+    gamma=1.0,
+):
+    """Return six-neighbor RDP prior gradient for candidate voxels."""
+    return pairwise_neighbor_prior_gradient(
+        activity=activity,
+        candidate_flat_indices=candidate_flat_indices,
+        grid_shape=grid_shape,
+        device=device,
+        pair_gradient_fn=rdp_pair_gradient,
+        gamma=gamma,
+    )
+
+
+def compute_reconstruction_prior_gradient(
     activity,
     candidate_positions,
     candidate_grid,
-    map_priors,
+    reconstruction_priors,
     device,
 ):
-    """Return summed one-step-late MAP prior gradients from config dictionaries."""
-    if not map_priors:
+    """Return summed one-step-late reconstruction prior gradients from config dictionaries."""
+    if not reconstruction_priors:
         return torch.zeros_like(activity)
 
     candidate_positions = torch.as_tensor(candidate_positions, dtype=TORCH_DTYPE, device=device)
     gradient = torch.zeros_like(activity)
-    for prior in map_priors:
+    for prior in reconstruction_priors:
         prior_type = str(prior.get("type", "")).strip().lower()
-        if prior_type in ("sieve", "gaussian_sieve"):
-            continue
 
         beta = float(prior.get("beta", 0.0))
         if beta < 0.0:
-            raise ValueError("MAP prior beta must be >= 0.")
+            raise ValueError("Reconstruction prior beta must be >= 0.")
         if beta == 0.0:
             continue
 
@@ -334,28 +486,57 @@ def compute_map_prior_gradient(
             gradient = gradient + beta * (activity - neighbor_mean)
         elif prior_type in ("l1", "sparsity"):
             gradient = gradient + beta
+        elif prior_type in ("huber", "huber_penalty"):
+            gradient = gradient + beta * huber_neighbor_prior_gradient(
+                activity=activity,
+                candidate_flat_indices=candidate_grid["candidate_flat_indices"],
+                grid_shape=candidate_grid["grid_shape"],
+                device=device,
+                delta=float(prior.get("delta", 1.0)),
+            )
+        elif prior_type in ("rdp", "relative_difference", "relative_difference_penalty"):
+            gradient = gradient + beta * rdp_neighbor_prior_gradient(
+                activity=activity,
+                candidate_flat_indices=candidate_grid["candidate_flat_indices"],
+                grid_shape=candidate_grid["grid_shape"],
+                device=device,
+                gamma=float(prior.get("gamma", 1.0)),
+            )
         else:
             raise ValueError(
-                f"Unknown MAP prior type {prior_type!r}. "
-                "Use: smoothness, l1, radial_quadratic, z_quadratic, sieve."
+                f"Unknown reconstruction prior type {prior_type!r}. "
+                "Use: smoothness, l1, huber, rdp."
             )
 
     return gradient
 
 
-def get_map_sieve_sigma_cm(map_priors):
-    """Return Gaussian sieve sigma from MAP prior config, or 0 when disabled."""
-    sigma_cm = 0.0
-    for prior in map_priors or []:
-        prior_type = str(prior.get("type", "")).strip().lower()
-        if prior_type not in ("sieve", "gaussian_sieve"):
-            continue
-        if sigma_cm > 0.0:
-            raise ValueError("Only one MAP sieve prior can be configured.")
-        sigma_cm = float(prior.get("sigma_cm", prior.get("sigma", 0.0)))
-        if sigma_cm < 0.0:
-            raise ValueError("MAP sieve sigma_cm must be >= 0.")
-    return sigma_cm
+def make_measurement_row_subsets(counts_shape, num_subsets, device):
+    """Split flattened H rows into measurement-based subsets."""
+    if len(counts_shape) != 2:
+        raise ValueError("counts must be a 2D array: measurements x channels.")
+
+    num_measurements, num_channels = counts_shape
+    num_subsets = int(num_subsets)
+    if num_subsets <= 0:
+        raise ValueError("BSREM num_subsets must be > 0.")
+    num_subsets = min(num_subsets, int(num_measurements))
+
+    channel_offsets = np.arange(int(num_channels), dtype=np.int64)
+    subsets = []
+    for subset_index in range(num_subsets):
+        measurement_indices = np.arange(subset_index, int(num_measurements), num_subsets)
+        row_indices = (
+            measurement_indices[:, np.newaxis] * int(num_channels)
+            + channel_offsets[np.newaxis, :]
+        ).reshape(-1)
+        subsets.append(
+            {
+                "measurement_count": int(len(measurement_indices)),
+                "row_indices": torch.as_tensor(row_indices, dtype=torch.long, device=device),
+            }
+        )
+    return subsets
 
 
 def mlem_reconstruction(
@@ -528,13 +709,15 @@ def mapem_reconstruction(
     voxel_size_cm=1.0,
     num_iterations=40,
     history_interval=5,
-    map_priors=None,
+    reconstruction_priors=None,
+    reconstruction_sieve_sigma_cm=0.0,
 ):
     """
     Reconstruct a voxel activity map with MAP-EM.
 
-    The likelihood term is the same Poisson model as ML-EM. MAP priors are
-    supplied as config dictionaries and enter the one-step-late denominator.
+    The likelihood term is the same Poisson model as ML-EM. Reconstruction
+    priors are supplied as config dictionaries and enter the one-step-late
+    denominator.
     """
     candidate_grid = make_candidate_grid_data(
         trajectory_center=trajectory_center,
@@ -577,8 +760,8 @@ def mapem_reconstruction(
     synchronize_if_cuda(device)
     transfer_elapsed_seconds = perf_counter() - transfer_start_time
 
-    map_priors = list(map_priors or [])
-    sieve_sigma_cm = get_map_sieve_sigma_cm(map_priors)
+    reconstruction_priors = list(reconstruction_priors or [])
+    sieve_sigma_cm = float(reconstruction_sieve_sigma_cm)
 
     sensitivity = torch.sum(system_matrix_tensor, dim=0)
     initial_signal = torch.clamp(counts_flat - backgrounds_flat, min=0.0)
@@ -603,11 +786,11 @@ def mapem_reconstruction(
                 activity=activity,
             )
             ratio = counts_flat / torch.clamp(predicted_counts, min=EPS)
-            prior_gradient = compute_map_prior_gradient(
+            prior_gradient = compute_reconstruction_prior_gradient(
                 activity=activity,
                 candidate_positions=candidate_positions,
                 candidate_grid=candidate_grid,
-                map_priors=map_priors,
+                reconstruction_priors=reconstruction_priors,
                 device=device,
             )
             denominator = sensitivity + prior_gradient
@@ -643,7 +826,7 @@ def mapem_reconstruction(
                         ),
                         "total_activity": tensor_to_float(torch.sum(activity)),
                         "max_activity": tensor_to_float(torch.max(activity)),
-                        "map_priors": [dict(prior) for prior in map_priors],
+                        "reconstruction_priors": [dict(prior) for prior in reconstruction_priors],
                         "torch_device": torch_device_name,
                     }
                 )
@@ -665,5 +848,213 @@ def mapem_reconstruction(
             "system_matrix_seconds": system_matrix_elapsed_seconds,
             "transfer_seconds": transfer_elapsed_seconds,
             "mapem_iterations_seconds": iteration_elapsed_seconds,
+        },
+    }
+
+
+def bsrem_reconstruction(
+    counts,
+    geometry,
+    rotations,
+    translations,
+    assumed_backgrounds,
+    assumed_channel_scales,
+    assumed_distance_power,
+    trajectory_center,
+    search_radius,
+    cylinder_height,
+    assumed_angular_peak_angle_deg=0.0,
+    assumed_angular_width_deg=None,
+    assumed_collimator_half_angle_deg=None,
+    assumed_collimator_edge_width_deg=3.0,
+    assumed_collimator_leakage=0.0,
+    assumed_skin_thickness_cm=0.0,
+    assumed_skin_mu_per_cm=0.0,
+    assumed_detector_intrinsic_efficiency=1.0,
+    assumed_response_scale=1.0,
+    voxel_size_cm=1.0,
+    num_iterations=40,
+    history_interval=5,
+    reconstruction_priors=None,
+    reconstruction_sieve_sigma_cm=0.0,
+    num_subsets=8,
+    relaxation_initial=1.0,
+    relaxation_decay=0.01,
+    relaxation_power=1.0,
+    max_relative_update=2.0,
+):
+    """
+    Reconstruct a voxel activity map with BSREM.
+
+    BSREM uses ordered subsets like OSEM, but applies a relaxation schedule and
+    the same penalized-likelihood prior gradient used by MAP-EM.
+    """
+    candidate_grid = make_candidate_grid_data(
+        trajectory_center=trajectory_center,
+        search_radius=search_radius,
+        cylinder_height=cylinder_height,
+        voxel_size_cm=voxel_size_cm,
+    )
+    candidate_positions = candidate_grid["candidate_positions"]
+    device = get_cuda_device()
+    system_matrix_start_time = perf_counter()
+    system_matrix_tensor = build_system_matrix_torch(
+        candidate_positions=candidate_positions,
+        geometry=geometry,
+        rotations=rotations,
+        translations=translations,
+        assumed_channel_scales=assumed_channel_scales,
+        assumed_distance_power=assumed_distance_power,
+        assumed_angular_peak_angle_deg=assumed_angular_peak_angle_deg,
+        assumed_angular_width_deg=assumed_angular_width_deg,
+        assumed_collimator_half_angle_deg=assumed_collimator_half_angle_deg,
+        assumed_collimator_edge_width_deg=assumed_collimator_edge_width_deg,
+        assumed_collimator_leakage=assumed_collimator_leakage,
+        assumed_skin_thickness_cm=assumed_skin_thickness_cm,
+        assumed_skin_mu_per_cm=assumed_skin_mu_per_cm,
+        assumed_detector_intrinsic_efficiency=assumed_detector_intrinsic_efficiency,
+        assumed_response_scale=assumed_response_scale,
+        device=device,
+        dtype=TORCH_DTYPE,
+    )
+    synchronize_if_cuda(device)
+    system_matrix_elapsed_seconds = perf_counter() - system_matrix_start_time
+
+    transfer_start_time = perf_counter()
+    torch_device_name = str(device)
+    counts_array = np.asarray(counts, dtype=float)
+    counts_flat = to_tensor(counts_array.ravel(), device)
+    backgrounds_flat = to_tensor(
+        np.broadcast_to(assumed_backgrounds, counts_array.shape).astype(float).ravel(),
+        device,
+    )
+    subsets = make_measurement_row_subsets(
+        counts_shape=counts_array.shape,
+        num_subsets=num_subsets,
+        device=device,
+    )
+    synchronize_if_cuda(device)
+    transfer_elapsed_seconds = perf_counter() - transfer_start_time
+
+    reconstruction_priors = list(reconstruction_priors or [])
+    sieve_sigma_cm = float(reconstruction_sieve_sigma_cm)
+
+    sensitivity = torch.sum(system_matrix_tensor, dim=0)
+    initial_signal = torch.clamp(counts_flat - backgrounds_flat, min=0.0)
+    initial_activity = tensor_to_float(
+        torch.sum(initial_signal) / torch.clamp(torch.sum(sensitivity), min=EPS)
+    )
+    activity = torch.full(
+        (len(candidate_positions),),
+        max(initial_activity, EPS),
+        dtype=TORCH_DTYPE,
+        device=device,
+    )
+
+    relaxation_initial = float(relaxation_initial)
+    relaxation_decay = float(relaxation_decay)
+    relaxation_power = float(relaxation_power)
+    max_relative_update = float(max_relative_update)
+    if relaxation_initial <= 0.0:
+        raise ValueError("BSREM relaxation_initial must be > 0.")
+    if relaxation_decay < 0.0:
+        raise ValueError("BSREM relaxation_decay must be >= 0.")
+    if relaxation_power < 0.0:
+        raise ValueError("BSREM relaxation_power must be >= 0.")
+    if max_relative_update <= 0.0:
+        raise ValueError("BSREM max_relative_update must be > 0.")
+
+    full_measurement_count = int(counts_array.shape[0])
+    history = []
+    activity_history = []
+    iteration_start_time = perf_counter()
+    with torch.no_grad():
+        for iteration in range(1, num_iterations + 1):
+            relaxation = relaxation_initial / (
+                (1.0 + relaxation_decay * float(iteration - 1)) ** relaxation_power
+            )
+            for subset in subsets:
+                row_indices = subset["row_indices"]
+                subset_matrix = system_matrix_tensor[row_indices, :]
+                subset_counts = counts_flat[row_indices]
+                subset_backgrounds = backgrounds_flat[row_indices]
+                predicted_counts = predict_counts_from_activity(
+                    backgrounds_flat=subset_backgrounds,
+                    system_matrix=subset_matrix,
+                    activity=activity,
+                )
+                ratio = subset_counts / torch.clamp(predicted_counts, min=EPS)
+                subset_scale = full_measurement_count / max(
+                    int(subset["measurement_count"]),
+                    1,
+                )
+                data_gradient = subset_scale * (subset_matrix.T @ (ratio - 1.0))
+                prior_gradient = compute_reconstruction_prior_gradient(
+                    activity=activity,
+                    candidate_positions=candidate_positions,
+                    candidate_grid=candidate_grid,
+                    reconstruction_priors=reconstruction_priors,
+                    device=device,
+                )
+                relative_update = (
+                    relaxation
+                    * (data_gradient - prior_gradient)
+                    / torch.clamp(sensitivity, min=EPS)
+                )
+                relative_update = torch.clamp(
+                    relative_update,
+                    min=-0.95,
+                    max=max_relative_update,
+                )
+                activity = activity * (1.0 + relative_update)
+                activity = torch.clamp(activity, min=EPS)
+                activity = apply_sieve_filter(
+                    activity=activity,
+                    candidate_flat_indices=candidate_grid["candidate_flat_indices"],
+                    grid_shape=candidate_grid["grid_shape"],
+                    voxel_size_cm=candidate_grid["voxel_size_cm"],
+                    sieve_sigma_cm=sieve_sigma_cm,
+                    device=device,
+                )
+
+            if iteration == 1 or iteration % history_interval == 0 or iteration == num_iterations:
+                predicted_counts = predict_counts_from_activity(
+                    backgrounds_flat=backgrounds_flat,
+                    system_matrix=system_matrix_tensor,
+                    activity=activity,
+                )
+                history.append(
+                    {
+                        "iteration": float(iteration),
+                        "score": poisson_negative_log_likelihood_torch(
+                            counts_flat,
+                            predicted_counts,
+                        ),
+                        "total_activity": tensor_to_float(torch.sum(activity)),
+                        "max_activity": tensor_to_float(torch.max(activity)),
+                        "reconstruction_priors": [dict(prior) for prior in reconstruction_priors],
+                        "bsrem_num_subsets": int(len(subsets)),
+                        "bsrem_relaxation": float(relaxation),
+                        "torch_device": torch_device_name,
+                    }
+                )
+                activity_history.append(tensor_to_numpy(activity).copy())
+    synchronize_if_cuda(device)
+    iteration_elapsed_seconds = perf_counter() - iteration_start_time
+
+    return {
+        "candidate_positions": candidate_positions,
+        "candidate_flat_indices": candidate_grid["candidate_flat_indices"].copy(),
+        "grid_shape": tuple(candidate_grid["grid_shape"]),
+        "voxel_size_cm": float(candidate_grid["voxel_size_cm"]),
+        "activity": tensor_to_numpy(activity).copy(),
+        "activity_history": [snapshot.copy() for snapshot in activity_history],
+        "history": history,
+        "system_matrix": tensor_to_numpy(system_matrix_tensor).copy(),
+        "torch_device": torch_device_name,
+        "timings": {
+            "system_matrix_seconds": system_matrix_elapsed_seconds,
+            "transfer_seconds": transfer_elapsed_seconds,
+            "bsrem_iterations_seconds": iteration_elapsed_seconds,
         },
     }
