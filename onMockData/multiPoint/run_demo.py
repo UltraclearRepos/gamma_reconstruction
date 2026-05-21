@@ -97,7 +97,7 @@ def make_default_config():
         "GENERATION_RESPONSE_SCALE": 10000,  # Calibration scale from source units to counts; increase to amplify signal, usually test 1-1e5.
 
         # Assumed reconstruction model.
-        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1100.0,  # Background rate used by reconstruction model.
+        "ASSUMED_BACKGROUND_MEAN_PER_SECOND": 1000.0,  # Background rate used by reconstruction model.
         "ASSUMED_CHANNEL_SCALE": 1.0,  # Global channel sensitivity used by reconstruction model.
         "ASSUMED_DISTANCE_POWER": 0.0,  # Extra empirical distance falloff; keep 0 with solid angle, test 0-1 if calibration needs more falloff.
         "ASSUMED_ANGULAR_PEAK_DEG": 0.0,  # Peak of detector angular acceptance curve [deg]; typical test range: 0-45.
@@ -143,7 +143,7 @@ def make_default_config():
             {"type": "sieve", "sigma_cm": 0.0},
         ],  # MAP-EM priors used only with reconstruction_method="map_em".
         # Activity-map metrics.
-        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.000001,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
+        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.5,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
         "ACTIVITY_COMPONENT_MIN_VOXELS": 2,  # Minimum connected voxels needed to report a blob.
 
         # Visualization output.

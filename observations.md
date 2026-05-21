@@ -23,6 +23,6 @@ After (with L1-like penalty): \
 7. Instead of physics formula for expected counts for specific detector position, make measurements for different positions relative to source, and then take expected counts from this interpolated matrix. [Detection models for freehand SPECT
 reconstruction]. But then we still to simulate attenuation provided by skin/organ
 
-8. Do more reseatch on reconstruction algorithms
+8. Do more research on reconstruction algorithms
 
 9. Maybe ML model? :)

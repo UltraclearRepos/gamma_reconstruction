@@ -603,14 +603,21 @@ def mapem_reconstruction(
                 activity=activity,
             )
             ratio = counts_flat / torch.clamp(predicted_counts, min=EPS)
-            denominator = sensitivity + compute_map_prior_gradient(
+            prior_gradient = compute_map_prior_gradient(
                 activity=activity,
                 candidate_positions=candidate_positions,
                 candidate_grid=candidate_grid,
                 map_priors=map_priors,
                 device=device,
             )
-            correction = (system_matrix_tensor.T @ ratio) / torch.clamp(denominator, min=EPS)
+            denominator = sensitivity + prior_gradient
+            # Smoothness priors can have a negative local gradient. If that
+            # nearly cancels the tiny H sensitivity, the EM denominator collapses
+            # and activity explodes. Keep the prior influence bounded relative
+            # to the data sensitivity.
+            denominator_floor = torch.clamp(0.25 * sensitivity, min=EPS)
+            denominator = torch.maximum(denominator, denominator_floor)
+            correction = (system_matrix_tensor.T @ ratio) / denominator
             activity *= correction
             activity = apply_sieve_filter(
                 activity=activity,
