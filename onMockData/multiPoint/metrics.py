@@ -365,6 +365,12 @@ def summarize_activity_component_matching(
 
         reconstructed_component = reconstructed_components[reconstructed_index]
         true_component = true_components[true_index]
+        reconstructed_total_activity = float(reconstructed_component["total_activity"])
+        true_total_activity = float(true_component["total_activity"])
+        activity_recovery_fraction = reconstructed_total_activity / max(
+            true_total_activity,
+            EPS,
+        )
         matched_reconstructed.add(reconstructed_index)
         matched_true.add(true_index)
         matches.append(
@@ -385,10 +391,10 @@ def summarize_activity_component_matching(
                 ),
                 "reconstructed_voxels": int(reconstructed_component["voxel_count"]),
                 "true_voxels": int(true_component["voxel_count"]),
-                "reconstructed_total_activity": float(
-                    reconstructed_component["total_activity"]
-                ),
-                "true_total_activity": float(true_component["total_activity"]),
+                "reconstructed_total_activity": reconstructed_total_activity,
+                "true_total_activity": true_total_activity,
+                "activity_recovery_fraction": activity_recovery_fraction,
+                "activity_error_fraction": activity_recovery_fraction - 1.0,
                 "reconstructed_centroid": reconstructed_component["centroid"],
                 "true_centroid": true_component["centroid"],
             }
@@ -407,6 +413,9 @@ def summarize_activity_component_matching(
 
     centroid_distances = [match["centroid_distance_cm"] for match in matches]
     closest_distances = [match["closest_voxel_distance_cm"] for match in matches]
+    activity_recovery_fractions = [
+        match["activity_recovery_fraction"] for match in matches
+    ]
 
     return {
         "threshold_fraction": float(threshold_fraction),
@@ -427,6 +436,11 @@ def summarize_activity_component_matching(
         ),
         "mean_closest_voxel_distance_cm": (
             float(np.mean(closest_distances)) if closest_distances else np.nan
+        ),
+        "mean_activity_recovery_fraction": (
+            float(np.mean(activity_recovery_fractions))
+            if activity_recovery_fractions
+            else np.nan
         ),
         "matches": matches,
         "extra_reconstructed": extra_reconstructed,
@@ -465,6 +479,10 @@ def print_activity_component_matching_summary(summary):
         " closest voxel distance mean [cm]: "
         f"{summary['mean_closest_voxel_distance_cm']:.4f}"
     )
+    print(
+        " activity recovery mean recon/true: "
+        f"{summary['mean_activity_recovery_fraction']:.4f}"
+    )
 
     for match in summary["matches"]:
         recon_center = np.round(match["reconstructed_centroid"], 3)
@@ -476,6 +494,10 @@ def print_activity_component_matching_summary(summary):
             f"closest_voxels={match['closest_voxel_distance_cm']:.4f} cm, "
             f"peak={match['peak_distance_cm']:.4f} cm, "
             f"voxels={match['reconstructed_voxels']}/{match['true_voxels']}, "
+            f"activity={match['reconstructed_total_activity']:.4f}/"
+            f"{match['true_total_activity']:.4f}, "
+            f"recovery={match['activity_recovery_fraction']:.4f}, "
+            f"error={100.0 * match['activity_error_fraction']:.1f}%, "
             f"centers recon/true={recon_center}/{true_center}"
         )
 
