@@ -26,3 +26,5 @@ reconstruction]. But then we still to simulate attenuation provided by skin/orga
 8. Do more research on reconstruction algorithms
 
 9. Maybe ML model? :)
+
+10. TODO: For mlem, map-em, bsrem run for different priors, prior parameters, iterations, measurement_count and true_sources scenarios. Analyse results to check best prior and parameters for each algorithm, and try to find common best prior configuration for all. Check if best prior configuration is consistent not only through algorithms, but to different true sources localization, try to determine best prior configuration for all algorithms, for all true sources localization. Analyse accuracy of algorithms in terms of iteration number and measurements number.

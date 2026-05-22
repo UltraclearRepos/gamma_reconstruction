@@ -23,6 +23,7 @@ from run_demo import ON_MOCK_DATA_DIR, make_default_config, run_experiment
 RECONSTRUCTION_METHODS = [
     "map_em",
     "bsrem",
+    # "mlem",
 ]
 
 
@@ -49,12 +50,13 @@ NUM_MEASUREMENT_VARIANTS = [
 # l1: beta range: 0.001 - 0.1: Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
 
 RECONSTRUCTION_PRIOR_VARIANTS = [
-    [
-        {"type": "smoothness", "beta": 0.01},
-    ],
-        [
-        {"type": "smoothness", "beta": 0.1},
-    ],
+    # [],  # No priors; useful for plain ML-EM / unregularized baseline.
+    # [
+    #     {"type": "smoothness", "beta": 0.01},
+    # ],
+    # [
+    #     {"type": "smoothness", "beta": 0.1},
+    # ],
     [
         {"type": "smoothness", "beta": 0.5},
     ],
@@ -168,7 +170,53 @@ FIXED_OVERRIDES = {
 }
 
 
-OUTPUT_CSV = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations" / "reconstruction_method_prior_sources_sweep.csv"
+OUTPUT_DIR = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
+OUTPUT_CSV = OUTPUT_DIR / "reconstruction_method_prior_sources_sweep.csv"
+PAUSE_TOGGLE_KEY = "0"
+
+
+class ConsoleCasePauseToggle:
+    """Pause the sweep between cases when the toggle key is pending."""
+
+    def __init__(self, toggle_key):
+        self.toggle_key = str(toggle_key).lower()
+        self.paused = False
+        try:
+            import msvcrt
+        except ImportError:
+            self.console = None
+        else:
+            self.console = msvcrt
+
+    def print_help(self):
+        """Explain the between-case pause shortcut."""
+        if self.console is None:
+            print("Between-case pause key is available only on Windows terminals.")
+            return
+        print(
+            f"Press '{self.toggle_key}' during or between cases to pause before "
+            "the next case; press it again to resume."
+        )
+
+    def _toggle(self):
+        self.paused = not self.paused
+        if self.paused:
+            print(f"\nSweep paused. Press '{self.toggle_key}' to resume.")
+            return
+        print("\nSweep resumed.")
+
+    def _consume_toggle_keys(self):
+        if self.console is None:
+            return
+        while self.console.kbhit():
+            key = self.console.getwch().lower()
+            if key == self.toggle_key:
+                self._toggle()
+
+    def checkpoint(self):
+        """Read pending key presses and wait only between sweep cases."""
+        self._consume_toggle_keys()
+        time.sleep(1.0)
 
 
 def _csv_value(value):
@@ -370,13 +418,15 @@ def ordered_columns(rows):
 
 
 def write_rows(path, rows):
-    """Write rows to CSV with stable column order."""
+    """Append rows to CSV, writing the header only for a new file."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists() or path.stat().st_size == 0
 
-    with path.open("w", newline="", encoding="utf-8") as output_file:
+    with path.open("a", newline="", encoding="utf-8") as output_file:
         writer = csv.DictWriter(output_file, fieldnames=ordered_columns(rows))
-        writer.writeheader()
+        if write_header:
+            writer.writeheader()
         writer.writerows(rows)
 
 
@@ -387,8 +437,11 @@ def main():
 
     print(f"Running {len(cases)} reconstruction sweep cases")
     print(f"Output CSV: {OUTPUT_CSV}")
+    pause_toggle = ConsoleCasePauseToggle(PAUSE_TOGGLE_KEY)
+    pause_toggle.print_help()
 
     for case_index, case in enumerate(cases, start=1):
+        pause_toggle.checkpoint()
         started_at = time.perf_counter()
         experiment = run_experiment(overrides=case["overrides"])
         elapsed_seconds = time.perf_counter() - started_at
@@ -413,6 +466,8 @@ def main():
             f"centroid_mean={row['centroid_distance_mean_cm']:.4f} cm, "
             f"elapsed={elapsed_seconds:.1f}s"
         )
+        if case_index < len(cases):
+            pause_toggle.checkpoint()
 
     write_rows(OUTPUT_CSV, rows)
 
