@@ -1,0 +1,6 @@
+# Install a CUDA-enabled PyTorch build on GPU Jenkins agents when needed.
+torch
+numpy
+pandas
+matplotlib
+Pillow
