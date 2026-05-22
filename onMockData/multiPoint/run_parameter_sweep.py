@@ -22,7 +22,7 @@ from run_demo import ON_MOCK_DATA_DIR, make_default_config, run_experiment
 
 RECONSTRUCTION_METHODS = [
     "map_em",
-    "bsrem",
+    # "bsrem",
     # "mlem",
 ]
 
@@ -50,82 +50,82 @@ NUM_MEASUREMENT_VARIANTS = [
 # l1: beta range: 0.001 - 0.1: Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
 
 RECONSTRUCTION_PRIOR_VARIANTS = [
-    # [],  # No priors; useful for plain ML-EM / unregularized baseline.
+    [],  # No priors; useful for plain ML-EM / unregularized baseline.
     # [
     #     {"type": "smoothness", "beta": 0.01},
     # ],
     # [
     #     {"type": "smoothness", "beta": 0.1},
     # ],
-    [
-        {"type": "smoothness", "beta": 0.5},
-    ],
-    [
-        {"type": "smoothness", "beta": 1.0},
-    ],
-    [
-        {"type": "huber", "beta": 0.1, "delta": 0.1},
-    ],
-    [
-        {"type": "huber", "beta": 0.1, "delta": 0.3},
-    ],
-    [
-        {"type": "huber", "beta": 0.1, "delta": 0.5},
-    ],
-    [
-        {"type": "huber", "beta": 0.1, "delta": 0.8},
-    ],
-    [
-        {"type": "huber", "beta": 0.1, "delta": 1.0},
-    ],
-    [
-        {"type": "huber", "beta": 0.1, "delta": 1.5},
-    ],
-    [
-        {"type": "huber", "beta": 0.1, "delta": 2.5},
-    ],
-    [
-        {"type": "huber", "beta": 0.1, "delta": 3.0},
-    ],
-    [
-        {"type": "huber", "beta": 0.1, "delta": 5.0},
-    ],
-    [
-        {"type": "rdp", "beta": 0.1, "gamma": 0.1},
-    ],
-    [
-        {"type": "rdp", "beta": 0.1, "gamma": 0.3},
-    ],
-    [
-        {"type": "rdp", "beta": 0.1, "gamma": 0.5},
-    ],
-    [
-        {"type": "rdp", "beta": 0.1, "gamma": 0.8},
-    ],
-    [
-        {"type": "rdp", "beta": 0.1, "gamma": 1.0},
-    ],
-    [
-        {"type": "rdp", "beta": 0.1, "gamma": 1.5},
-    ],
-    [
-        {"type": "rdp", "beta": 0.1, "gamma": 2.0},
-    ],
-    [
-        {"type": "rdp", "beta": 0.1, "gamma": 3.0},
-    ],
-    [
-        {"type": "l1", "beta": 0.001},
-    ],
-    [
-        {"type": "l1", "beta": 0.01},
-    ],
-    [
-        {"type": "l1", "beta": 0.1},
-    ],
-    [
-        {"type": "l1", "beta": 0.5},
-    ]
+    # [
+    #     {"type": "smoothness", "beta": 0.5},
+    # ],
+    # [
+    #     {"type": "smoothness", "beta": 1.0},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.1, "delta": 0.1},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.1, "delta": 0.3},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.1, "delta": 0.5},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.1, "delta": 0.8},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.1, "delta": 1.0},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.1, "delta": 1.5},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.1, "delta": 2.5},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.1, "delta": 3.0},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.1, "delta": 5.0},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.1, "gamma": 0.1},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.1, "gamma": 0.3},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.1, "gamma": 0.5},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.1, "gamma": 0.8},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.1, "gamma": 1.0},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.1, "gamma": 1.5},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.1, "gamma": 2.0},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.1, "gamma": 3.0},
+    # ],
+    # [
+    #     {"type": "l1", "beta": 0.001},
+    # ],
+    # [
+    #     {"type": "l1", "beta": 0.01},
+    # ],
+    # [
+    #     {"type": "l1", "beta": 0.1},
+    # ],
+    # [
+    #     {"type": "l1", "beta": 0.5},
+    # ]
 ]
 
 
