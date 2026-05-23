@@ -135,21 +135,21 @@ def make_default_config():
         "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
-        "NUM_ITERATIONS": 100,  # ML-EM iteration count.
-        "HISTORY_INTERVAL": 10,  # How often ML-EM stores history snapshots.
+        "NUM_ITERATIONS": 10,  # ML-EM iteration count.
+        "HISTORY_INTERVAL": 1,  # How often ML-EM stores history snapshots.
         "RECONSTRUCTION_PRIORS": [
             # {"type": "smoothness", "beta": 0.1},  # Penalizes differences from the six-neighbor local mean; smooths noisy voxel spikes.
             # {"type": "huber", "beta": 0.1, "delta": 0.3},  # Smooths small neighbor differences while preserving sharper blob edges; delta is the activity-difference scale where the penalty changes from quadratic-like to edge-preserving, try 0.1-5.0 depending on reconstructed activity scale.
             # {"type": "rdp", "beta": 0.001, "gamma": 0.3},  # Relative Difference Penalty; smooths weak/noisy regions while being gentler near strong activity contrast; gamma controls edge preservation in the relative denominator, try 0.1-3.0, with larger values preserving stronger contrasts.
-            # {"type": "l1", "beta": 0.01},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
+            # {"type": "l1", "beta": 0.3},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
         ],  # Priors shared by MAP-EM and BSREM
-        "RECONSTRUCTION_SIEVE_SIGMA_CM": 0.3,  # Optional post-update Gaussian sieve filter; 0 disables it.
+        "RECONSTRUCTION_SIEVE_SIGMA_CM": 0.0,  # Optional post-update Gaussian sieve filter; 0 disables it.
         "BSREM_NUM_SUBSETS": 8,  # Ordered subsets per BSREM iteration.
         "BSREM_RELAXATION_INITIAL": 1.0,  # Initial BSREM relaxation step.
         "BSREM_RELAXATION_DECAY": 0.01,  # Larger values damp later BSREM iterations more strongly.
         "BSREM_RELAXATION_POWER": 1.0,  # Exponent used by the BSREM relaxation schedule.
         # Activity-map metrics.
-        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.3,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
+        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.5,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
         "ACTIVITY_COMPONENT_MIN_VOXELS": 2,  # Minimum connected voxels needed to report a blob.
 
         # Visualization output.

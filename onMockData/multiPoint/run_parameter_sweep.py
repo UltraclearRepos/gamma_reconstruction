@@ -198,18 +198,18 @@ RECONSTRUCTION_PRIOR_VARIANTS = [
     # [
     #     {"type": "rdp", "beta": 0.3, "gamma": 3.0},
     # ],
-    # [
-    #     {"type": "l1", "beta": 0.001},
-    # ],
-    # [
-    #     {"type": "l1", "beta": 0.01},
-    # ],
-    # [
-    #     {"type": "l1", "beta": 0.1},
-    # ],
-    # [
-    #     {"type": "l1", "beta": 0.5},
-    # ]
+    [
+        {"type": "l1", "beta": 0.001},
+    ],
+    [
+        {"type": "l1", "beta": 0.01},
+    ],
+    [
+        {"type": "l1", "beta": 0.1},
+    ],
+    [
+        {"type": "l1", "beta": 0.5},
+    ]
 ]
 
 
@@ -255,7 +255,7 @@ FIXED_OVERRIDES = {
 
 
 OUTPUT_DIR = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
-OUTPUT_CSV = OUTPUT_DIR / "reconstruction_method_sieve_threshold_sources_sweep.csv"
+OUTPUT_CSV = OUTPUT_DIR / "reconstruction_sieve_l1_sweep.csv"
 PAUSE_TOGGLE_KEY = "0"
 
 SWEEP_CSV_COLUMNS = [

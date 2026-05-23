@@ -28,3 +28,5 @@ reconstruction]. But then we still to simulate attenuation provided by skin/orga
 9. Maybe ML model? :)
 
 10. TODO: For mlem, map-em, bsrem run for different priors, prior parameters, iterations, measurement_count and true_sources scenarios. Analyse results to check best prior and parameters for each algorithm, and try to find common best prior configuration for all. Check if best prior configuration is consistent not only through algorithms, but to different true sources localization, try to determine best prior configuration for all algorithms, for all true sources localization. Analyse accuracy of algorithms in terms of iteration number and measurements number.
+
+11. Conbining gaussian sieve with l1 can be good idea. Sieve makes detected radiation grow in bigger areas, l1 make it smaller. Combination could make perfect one. Why? Only l1 has tendency to detect only 1 of 3 sources, Sieves has tendency to make all voxels active. Makes sense to combine this.
