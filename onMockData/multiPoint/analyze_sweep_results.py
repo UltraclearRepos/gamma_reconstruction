@@ -54,6 +54,8 @@ NUMERIC_COLUMNS = [
     "num_measurements",
     "num_iterations",
     "history_interval",
+    "reconstruction_sieve_sigma_cm",
+    "activity_component_threshold_fraction",
 ]
 
 

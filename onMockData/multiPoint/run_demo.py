@@ -54,22 +54,22 @@ def make_default_config():
         #     {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
         #     # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
         # ],
-        "TRUE_SOURCE_SPECS": [
-            # Lewy płat: głębiej, rozmyty
-            {"position": (-2.5, 1.5, -1.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
-            # Prawy płat: odrobinę wyżej, nieco mniejszy
-            {"position": (2.5, 1.0, 1.0), "strength_per_second": 4500.0, "spread_cm": 1.0},
-            # "Gorący guzek": bardzo blisko skóry (płytko), mały, wysoka aktywność
-            {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.4},
-        ],
         # "TRUE_SOURCE_SPECS": [
-        #     # Główne źródło ukryte głęboko w tkance
-        #     {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
-        #     # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
-        #     {"position": (0.0, 6.0, 0.0), "strength_per_second": 2000.0, "spread_cm": 0.5},
-        #     # Punkt referencyjny z boku dla oceny ogólnej geometrii
-        #     {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
+        #     # Lewy płat: głębiej, rozmyty
+        #     {"position": (-2.5, 1.5, -1.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
+        #     # Prawy płat: odrobinę wyżej, nieco mniejszy
+        #     {"position": (2.5, 1.0, 1.0), "strength_per_second": 4500.0, "spread_cm": 1.0},
+        #     # "Gorący guzek": bardzo blisko skóry (płytko), mały, wysoka aktywność
+        #     {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.4},
         # ],
+        "TRUE_SOURCE_SPECS": [
+            # Główne źródło ukryte głęboko w tkance
+            {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
+            # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
+            {"position": (0.0, 6.0, 0.0), "strength_per_second": 2000.0, "spread_cm": 0.5},
+            # Punkt referencyjny z boku dla oceny ogólnej geometrii
+            {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
+        ],
         # "TRUE_SOURCE_SPECS": [
         #     # Masywne, rozmyte źródło centralne
         #     {"position": (-1.0, 0.0, 0.0), "strength_per_second": 20000.0, "spread_cm": 2.0},
@@ -135,15 +135,15 @@ def make_default_config():
         "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
-        "NUM_ITERATIONS": 2000,  # ML-EM iteration count.
-        "HISTORY_INTERVAL": 100,  # How often ML-EM stores history snapshots.
+        "NUM_ITERATIONS": 100,  # ML-EM iteration count.
+        "HISTORY_INTERVAL": 10,  # How often ML-EM stores history snapshots.
         "RECONSTRUCTION_PRIORS": [
             # {"type": "smoothness", "beta": 0.1},  # Penalizes differences from the six-neighbor local mean; smooths noisy voxel spikes.
             # {"type": "huber", "beta": 0.1, "delta": 0.3},  # Smooths small neighbor differences while preserving sharper blob edges; delta is the activity-difference scale where the penalty changes from quadratic-like to edge-preserving, try 0.1-5.0 depending on reconstructed activity scale.
-            {"type": "rdp", "beta": 0.01, "gamma": 1.0},  # Relative Difference Penalty; smooths weak/noisy regions while being gentler near strong activity contrast; gamma controls edge preservation in the relative denominator, try 0.1-3.0, with larger values preserving stronger contrasts.
+            # {"type": "rdp", "beta": 0.001, "gamma": 0.3},  # Relative Difference Penalty; smooths weak/noisy regions while being gentler near strong activity contrast; gamma controls edge preservation in the relative denominator, try 0.1-3.0, with larger values preserving stronger contrasts.
             # {"type": "l1", "beta": 0.01},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
-        ],  # Priors shared by MAP-EM and BSREM.
-        "RECONSTRUCTION_SIEVE_SIGMA_CM": 0.0,  # Optional post-update Gaussian sieve filter; 0 disables it.
+        ],  # Priors shared by MAP-EM and BSREM
+        "RECONSTRUCTION_SIEVE_SIGMA_CM": 0.3,  # Optional post-update Gaussian sieve filter; 0 disables it.
         "BSREM_NUM_SUBSETS": 8,  # Ordered subsets per BSREM iteration.
         "BSREM_RELAXATION_INITIAL": 1.0,  # Initial BSREM relaxation step.
         "BSREM_RELAXATION_DECAY": 0.01,  # Larger values damp later BSREM iterations more strongly.

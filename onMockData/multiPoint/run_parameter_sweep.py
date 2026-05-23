@@ -4,6 +4,8 @@ Run reconstruction sweeps over method, priors, and true source scenarios.
 Only these parameters are varied:
 - reconstruction_method
 - RECONSTRUCTION_PRIORS
+- RECONSTRUCTION_SIEVE_SIGMA_CM
+- ACTIVITY_COMPONENT_THRESHOLD_FRACTION
 - TRUE_SOURCE_SPECS
 - NUM_ITERATIONS with HISTORY_INTERVAL
 - NUM_MEASUREMENTS
@@ -43,6 +45,37 @@ NUM_MEASUREMENT_VARIANTS = [
     100,
 ]
 
+
+RECONSTRUCTION_SIEVE_SIGMA_CM_VARIANTS = [
+    0.0,  # Disabled.
+    0.01,
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    1.0,
+    1.1,
+    1.3,
+    1.5,
+    2.0,
+    3.0
+]
+
+
+ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS = [
+    0.1,
+    0.3,
+    0.5,
+    0.7,
+    0.8,
+    0.9
+]
+
 # Available priors:
 # smoothness: beta range: 0.01 - 1.0: Penalizes differences from the six-neighbor local mean; smooths noisy voxel spikes.
 # huber: delta range: 0.1 - 5.0: Smooths small neighbor differences while preserving sharper blob edges; delta is the activity-difference scale where the penalty changes from quadratic-like to edge-preserving.
@@ -51,132 +84,132 @@ NUM_MEASUREMENT_VARIANTS = [
 
 RECONSTRUCTION_PRIOR_VARIANTS = [
     [],  # No priors; useful for plain ML-EM / unregularized baseline.
-    [
-        {"type": "smoothness", "beta": 0.01},
-    ],
-    [
-        {"type": "smoothness", "beta": 0.1},
-    ],
-    [
-        {"type": "smoothness", "beta": 0.5},
-    ],
-    [
-        {"type": "smoothness", "beta": 1.0},
-    ],
-    [
-        {"type": "huber", "beta": 0.01, "delta": 0.1},
-    ],
-    [
-        {"type": "huber", "beta": 0.01, "delta": 0.3},
-    ],
-    [
-        {"type": "huber", "beta": 0.01, "delta": 0.5},
-    ],
-    [
-        {"type": "huber", "beta": 0.01, "delta": 0.8},
-    ],
-    [
-        {"type": "huber", "beta": 0.01, "delta": 1.0},
-    ],
-    [
-        {"type": "huber", "beta": 0.01, "delta": 1.5},
-    ],
-    [
-        {"type": "huber", "beta": 0.01, "delta": 2.5},
-    ],
-    [
-        {"type": "huber", "beta": 0.01, "delta": 3.0},
-    ],
-    [
-        {"type": "huber", "beta": 0.01, "delta": 5.0},
-    ],
-    [
-        {"type": "huber", "beta": 0.3, "delta": 0.1},
-    ],
-    [
-        {"type": "huber", "beta": 0.3, "delta": 0.3},
-    ],
-    [
-        {"type": "huber", "beta": 0.3, "delta": 0.5},
-    ],
-    [
-        {"type": "huber", "beta": 0.3, "delta": 0.8},
-    ],
-    [
-        {"type": "huber", "beta": 0.3, "delta": 1.0},
-    ],
-    [
-        {"type": "huber", "beta": 0.3, "delta": 1.5},
-    ],
-    [
-        {"type": "huber", "beta": 0.3, "delta": 2.5},
-    ],
-    [
-        {"type": "huber", "beta": 0.3, "delta": 3.0},
-    ],
-    [
-        {"type": "huber", "beta": 0.3, "delta": 5.0},
-    ],
-    [
-        {"type": "rdp", "beta": 0.01, "gamma": 0.1},
-    ],
-    [
-        {"type": "rdp", "beta": 0.01, "gamma": 0.3},
-    ],
-    [
-        {"type": "rdp", "beta": 0.01, "gamma": 0.5},
-    ],
-    [
-        {"type": "rdp", "beta": 0.01, "gamma": 0.8},
-    ],
-    [
-        {"type": "rdp", "beta": 0.01, "gamma": 1.0},
-    ],
-    [
-        {"type": "rdp", "beta": 0.01, "gamma": 1.5},
-    ],
-    [
-        {"type": "rdp", "beta": 0.01, "gamma": 2.0},
-    ],
-    [
-        {"type": "rdp", "beta": 0.01, "gamma": 3.0},
-    ],
-    [
-        {"type": "rdp", "beta": 0.3, "gamma": 0.1},
-    ],
-    [
-        {"type": "rdp", "beta": 0.3, "gamma": 0.3},
-    ],
-    [
-        {"type": "rdp", "beta": 0.3, "gamma": 0.5},
-    ],
-    [
-        {"type": "rdp", "beta": 0.3, "gamma": 0.8},
-    ],
-    [
-        {"type": "rdp", "beta": 0.3, "gamma": 1.0},
-    ],
-    [
-        {"type": "rdp", "beta": 0.3, "gamma": 1.5},
-    ],
-    [
-        {"type": "rdp", "beta": 0.3, "gamma": 2.0},
-    ],
-    [
-        {"type": "rdp", "beta": 0.3, "gamma": 3.0},
-    ],
-    [
-        {"type": "l1", "beta": 0.001},
-    ],
-    [
-        {"type": "l1", "beta": 0.01},
-    ],
-    [
-        {"type": "l1", "beta": 0.1},
-    ],
-    [
-        {"type": "l1", "beta": 0.5},
-    ]
+    # [
+    #     {"type": "smoothness", "beta": 0.01},
+    # ],
+    # [
+    #     {"type": "smoothness", "beta": 0.1},
+    # ],
+    # [
+    #     {"type": "smoothness", "beta": 0.5},
+    # ],
+    # [
+    #     {"type": "smoothness", "beta": 1.0},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.01, "delta": 0.1},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.01, "delta": 0.3},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.01, "delta": 0.5},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.01, "delta": 0.8},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.01, "delta": 1.0},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.01, "delta": 1.5},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.01, "delta": 2.5},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.01, "delta": 3.0},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.01, "delta": 5.0},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.3, "delta": 0.1},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.3, "delta": 0.3},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.3, "delta": 0.5},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.3, "delta": 0.8},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.3, "delta": 1.0},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.3, "delta": 1.5},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.3, "delta": 2.5},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.3, "delta": 3.0},
+    # ],
+    # [
+    #     {"type": "huber", "beta": 0.3, "delta": 5.0},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.01, "gamma": 0.1},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.01, "gamma": 0.3},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.01, "gamma": 0.5},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.01, "gamma": 0.8},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.01, "gamma": 1.0},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.01, "gamma": 1.5},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.01, "gamma": 2.0},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.01, "gamma": 3.0},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.3, "gamma": 0.1},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.3, "gamma": 0.3},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.3, "gamma": 0.5},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.3, "gamma": 0.8},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.3, "gamma": 1.0},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.3, "gamma": 1.5},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.3, "gamma": 2.0},
+    # ],
+    # [
+    #     {"type": "rdp", "beta": 0.3, "gamma": 3.0},
+    # ],
+    # [
+    #     {"type": "l1", "beta": 0.001},
+    # ],
+    # [
+    #     {"type": "l1", "beta": 0.01},
+    # ],
+    # [
+    #     {"type": "l1", "beta": 0.1},
+    # ],
+    # [
+    #     {"type": "l1", "beta": 0.5},
+    # ]
 ]
 
 
@@ -222,7 +255,7 @@ FIXED_OVERRIDES = {
 
 
 OUTPUT_DIR = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
-OUTPUT_CSV = OUTPUT_DIR / "reconstruction_method_prior_sources_sweep.csv"
+OUTPUT_CSV = OUTPUT_DIR / "reconstruction_method_sieve_threshold_sources_sweep.csv"
 PAUSE_TOGGLE_KEY = "0"
 
 SWEEP_CSV_COLUMNS = [
@@ -236,6 +269,8 @@ SWEEP_CSV_COLUMNS = [
     "history_interval",
     "true_sources",
     "reconstruction_priors",
+    "reconstruction_sieve_sigma_cm",
+    "activity_component_threshold_fraction",
     "elapsed_seconds",
     "system_matrix_seconds",
     "transfer_seconds",
@@ -334,10 +369,20 @@ def prior_variant_name(priors):
 
 
 def iter_sweep_cases():
-    """Yield every method x prior x true-source x iteration x measurement combination."""
-    for method, reconstruction_priors, source_case, iteration_case, num_measurements in product(
+    """Yield every method x prior x sieve x threshold x true-source x iteration x measurement combination."""
+    for (
+        method,
+        reconstruction_priors,
+        reconstruction_sieve_sigma_cm,
+        activity_component_threshold_fraction,
+        source_case,
+        iteration_case,
+        num_measurements,
+    ) in product(
         RECONSTRUCTION_METHODS,
         RECONSTRUCTION_PRIOR_VARIANTS,
+        RECONSTRUCTION_SIEVE_SIGMA_CM_VARIANTS,
+        ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS,
         TRUE_SOURCE_CASES,
         ITERATION_CASES,
         NUM_MEASUREMENT_VARIANTS,
@@ -346,6 +391,8 @@ def iter_sweep_cases():
             **FIXED_OVERRIDES,
             "reconstruction_method": method,
             "RECONSTRUCTION_PRIORS": reconstruction_priors,
+            "RECONSTRUCTION_SIEVE_SIGMA_CM": reconstruction_sieve_sigma_cm,
+            "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": activity_component_threshold_fraction,
             "TRUE_SOURCE_SPECS": source_case["true_sources"],
             "NUM_ITERATIONS": iteration_case["num_iterations"],
             "HISTORY_INTERVAL": iteration_case["history_interval"],
@@ -357,6 +404,10 @@ def iter_sweep_cases():
                 "name": prior_variant_name(reconstruction_priors),
                 "priors": reconstruction_priors,
             },
+            "reconstruction_sieve_sigma_cm": float(reconstruction_sieve_sigma_cm),
+            "activity_component_threshold_fraction": float(
+                activity_component_threshold_fraction
+            ),
             "source_case": source_case,
             "iteration_case": iteration_case,
             "num_measurements": num_measurements,
@@ -430,6 +481,10 @@ def summarize_run(case_index, case, experiment, elapsed_seconds):
         "history_interval": int(case["iteration_case"]["history_interval"]),
         "true_sources": _csv_value(case["source_case"]["true_sources"]),
         "reconstruction_priors": _csv_value(case["prior_case"]["priors"]),
+        "reconstruction_sieve_sigma_cm": float(case["reconstruction_sieve_sigma_cm"]),
+        "activity_component_threshold_fraction": float(
+            case["activity_component_threshold_fraction"]
+        ),
         "elapsed_seconds": float(elapsed_seconds),
         "system_matrix_seconds": float(timings.get("system_matrix_seconds", np.nan)),
         "transfer_seconds": float(timings.get("transfer_seconds", np.nan)),
