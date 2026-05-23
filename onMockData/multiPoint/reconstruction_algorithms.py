@@ -383,21 +383,15 @@ def pairwise_neighbor_prior_gradient(
     flat_indices = torch.as_tensor(candidate_flat_indices, dtype=torch.long, device=device)
     num_grid_points = int(np.prod(grid_shape))
     activity_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
-    mask_flat = torch.zeros(num_grid_points, dtype=torch.bool, device=device)
+    mask_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
     activity_flat[flat_indices] = activity
-    mask_flat[flat_indices] = True
+    mask_flat[flat_indices] = 1.0
 
     volume = activity_flat.view(*grid_shape)
     mask = mask_flat.view(*grid_shape)
     gradient_volume = torch.zeros_like(volume)
 
     def add_edge_gradient(left_slices, right_slices):
-        left_mask = mask[left_slices]
-        right_mask = mask[right_slices]
-        valid = left_mask & right_mask
-        if not torch.any(valid):
-            return
-
         left = volume[left_slices]
         right = volume[right_slices]
         left_gradient, right_gradient = pair_gradient_fn(
@@ -405,11 +399,10 @@ def pairwise_neighbor_prior_gradient(
             right,
             **pair_gradient_kwargs,
         )
+        valid = mask[left_slices] * mask[right_slices]
 
-        gradient_left = gradient_volume[left_slices]
-        gradient_right = gradient_volume[right_slices]
-        gradient_left[valid] = gradient_left[valid] + left_gradient[valid]
-        gradient_right[valid] = gradient_right[valid] + right_gradient[valid]
+        gradient_volume[left_slices] = gradient_volume[left_slices] + left_gradient * valid
+        gradient_volume[right_slices] = gradient_volume[right_slices] + right_gradient * valid
 
     add_edge_gradient((slice(0, -1), slice(None), slice(None)), (slice(1, None), slice(None), slice(None)))
     add_edge_gradient((slice(None), slice(0, -1), slice(None)), (slice(None), slice(1, None), slice(None)))
