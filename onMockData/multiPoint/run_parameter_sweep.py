@@ -533,6 +533,11 @@ def main():
 
     print(f"Running {len(cases)} reconstruction sweep cases")
     print(f"Output CSV: {OUTPUT_CSV}")
+    print(f"Sieve sigma variants [cm]: {RECONSTRUCTION_SIEVE_SIGMA_CM_VARIANTS}")
+    print(
+        "Component threshold variants: "
+        f"{ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS}"
+    )
     pause_toggle = ConsoleCasePauseToggle(PAUSE_TOGGLE_KEY)
     pause_toggle.print_help()
 
@@ -556,6 +561,8 @@ def main():
             f"method={row['reconstruction_method']}, "
             f"measurements={row['num_measurements']}, "
             f"iterations={row['num_iterations']}/{row['history_interval']}, "
+            f"sieve_sigma={row['reconstruction_sieve_sigma_cm']:.3g} cm, "
+            f"component_threshold={row['activity_component_threshold_fraction']:.3g}, "
             f"priors={row['prior_case']} -> "
             f"cosine={row['shape_cosine']:.4f}, "
             f"pearson={row['shape_pearson']:.4f}, "
