@@ -17,7 +17,6 @@ INPUT_CSV = (
     ON_MOCK_DATA_DIR
     / "multiPoint"
     / "visualizations"
-    / "sweep_results"
     / "reconstruction_method_prior_sources_sweep.csv"
 )
 OUTPUT_DIR = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations" / "sweep_analysis"

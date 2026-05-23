@@ -174,6 +174,37 @@ OUTPUT_DIR = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
 OUTPUT_CSV = OUTPUT_DIR / "reconstruction_method_prior_sources_sweep.csv"
 PAUSE_TOGGLE_KEY = "0"
 
+SWEEP_CSV_COLUMNS = [
+    "case_index",
+    "source_case",
+    "reconstruction_method",
+    "prior_case",
+    "iteration_case",
+    "num_measurements",
+    "num_iterations",
+    "history_interval",
+    "true_sources",
+    "reconstruction_priors",
+    "elapsed_seconds",
+    "system_matrix_seconds",
+    "transfer_seconds",
+    "iteration_seconds",
+    "true_total_activity",
+    "reconstructed_total_activity",
+    "scale_to_true_total",
+    "shape_cosine",
+    "shape_pearson",
+    "true_component_count",
+    "reconstructed_component_count",
+    "matched_component_count",
+    "extra_reconstructed_count",
+    "missed_true_count",
+    "centroid_distance_mean_cm",
+    "centroid_distance_max_cm",
+    "closest_voxel_distance_mean_cm",
+    "activity_recovery_mean",
+]
+
 
 class ConsoleCasePauseToggle:
     """Pause the sweep between cases when the toggle key is pending."""
@@ -277,7 +308,7 @@ def iter_sweep_cases():
 
 
 def add_match_columns(row, component_matching):
-    """Add matched, missed, and extra component metrics to one CSV row."""
+    """Add only aggregate component metrics to one CSV row."""
     row.update(
         {
             "true_component_count": int(component_matching["true_component_count"]),
@@ -293,54 +324,6 @@ def add_match_columns(row, component_matching):
             "activity_recovery_mean": float(component_matching["mean_activity_recovery_fraction"]),
         }
     )
-
-    for match_index, match in enumerate(component_matching["matches"], start=1):
-        prefix = f"match_{match_index}"
-        row.update(
-            {
-                f"{prefix}_reconstructed_label": int(match["reconstructed_label"]),
-                f"{prefix}_true_label": int(match["true_label"]),
-                f"{prefix}_centroid_distance_cm": float(match["centroid_distance_cm"]),
-                f"{prefix}_closest_voxel_distance_cm": float(match["closest_voxel_distance_cm"]),
-                f"{prefix}_peak_distance_cm": float(match["peak_distance_cm"]),
-                f"{prefix}_reconstructed_voxels": int(match["reconstructed_voxels"]),
-                f"{prefix}_true_voxels": int(match["true_voxels"]),
-                f"{prefix}_reconstructed_total_activity": float(
-                    match["reconstructed_total_activity"]
-                ),
-                f"{prefix}_true_total_activity": float(match["true_total_activity"]),
-                f"{prefix}_activity_recovery_fraction": float(
-                    match["activity_recovery_fraction"]
-                ),
-                f"{prefix}_activity_error_fraction": float(match["activity_error_fraction"]),
-                f"{prefix}_activity_error_percent": 100.0
-                * float(match["activity_error_fraction"]),
-                f"{prefix}_reconstructed_centroid": _csv_value(match["reconstructed_centroid"]),
-                f"{prefix}_true_centroid": _csv_value(match["true_centroid"]),
-            }
-        )
-
-    for missed_index, component in enumerate(component_matching["missed_true"], start=1):
-        prefix = f"missed_true_{missed_index}"
-        row.update(
-            {
-                f"{prefix}_label": int(component["label"]),
-                f"{prefix}_voxels": int(component["voxel_count"]),
-                f"{prefix}_activity": float(component["total_activity"]),
-                f"{prefix}_centroid": _csv_value(component["centroid"]),
-            }
-        )
-
-    for extra_index, component in enumerate(component_matching["extra_reconstructed"], start=1):
-        prefix = f"extra_reconstructed_{extra_index}"
-        row.update(
-            {
-                f"{prefix}_label": int(component["label"]),
-                f"{prefix}_voxels": int(component["voxel_count"]),
-                f"{prefix}_activity": float(component["total_activity"]),
-                f"{prefix}_centroid": _csv_value(component["centroid"]),
-            }
-        )
 
 
 def summarize_run(case_index, case, experiment, elapsed_seconds):
@@ -381,40 +364,8 @@ def summarize_run(case_index, case, experiment, elapsed_seconds):
 
 
 def ordered_columns(rows):
-    """Return stable CSV columns with dynamic match columns appended."""
-    preferred = [
-        "case_index",
-        "source_case",
-        "reconstruction_method",
-        "prior_case",
-        "iteration_case",
-        "num_measurements",
-        "num_iterations",
-        "history_interval",
-        "true_sources",
-        "reconstruction_priors",
-        "elapsed_seconds",
-        "system_matrix_seconds",
-        "transfer_seconds",
-        "iteration_seconds",
-        "true_total_activity",
-        "reconstructed_total_activity",
-        "scale_to_true_total",
-        "shape_cosine",
-        "shape_pearson",
-        "true_component_count",
-        "reconstructed_component_count",
-        "matched_component_count",
-        "extra_reconstructed_count",
-        "missed_true_count",
-        "centroid_distance_mean_cm",
-        "centroid_distance_max_cm",
-        "closest_voxel_distance_mean_cm",
-        "activity_recovery_mean",
-    ]
-    seen = set(preferred)
-    dynamic = sorted(key for row in rows for key in row if key not in seen)
-    return preferred + dynamic
+    """Return the fixed compact sweep CSV schema."""
+    return SWEEP_CSV_COLUMNS
 
 
 def write_rows(path, rows):
@@ -424,7 +375,11 @@ def write_rows(path, rows):
     write_header = not path.exists() or path.stat().st_size == 0
 
     with path.open("a", newline="", encoding="utf-8") as output_file:
-        writer = csv.DictWriter(output_file, fieldnames=ordered_columns(rows))
+        writer = csv.DictWriter(
+            output_file,
+            fieldnames=ordered_columns(rows),
+            extrasaction="ignore",
+        )
         if write_header:
             writer.writeheader()
         writer.writerows(rows)
