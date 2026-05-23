@@ -30,6 +30,7 @@ RECONSTRUCTION_METHODS = [
 
 
 ITERATION_CASES = [
+    {"name": "iter_50", "num_iterations": 10, "history_interval": 10},
     {"name": "iter_50", "num_iterations": 50, "history_interval": 50},
     {"name": "iter_100", "num_iterations": 100, "history_interval": 100},
     {"name": "iter_250", "num_iterations": 250, "history_interval": 250},
@@ -50,20 +51,13 @@ RECONSTRUCTION_SIEVE_SIGMA_CM_VARIANTS = [
     0.0,  # Disabled.
     0.01,
     0.1,
-    0.2,
     0.3,
-    0.4,
     0.5,
     0.6,
-    0.7,
     0.8,
-    0.9,
     1.0,
-    1.1,
     1.3,
     1.5,
-    2.0,
-    3.0
 ]
 
 
