@@ -45,6 +45,12 @@ NUMERIC_COLUMNS = [
     "centroid_distance_max_cm",
     "closest_voxel_distance_mean_cm",
     "activity_recovery_mean",
+    "matched_reconstructed_voxels_mean",
+    "matched_true_voxels_mean",
+    "matched_voxel_count_ratio_mean",
+    "matched_reconstructed_voxels_total",
+    "matched_true_voxels_total",
+    "matched_voxel_count_ratio_total",
     "num_measurements",
     "num_iterations",
     "history_interval",
@@ -95,6 +101,8 @@ def prepare_dataframe(path):
     for column in NUMERIC_COLUMNS:
         if column in df:
             df[column] = pd.to_numeric(df[column], errors="coerce")
+        else:
+            df[column] = np.nan
 
     required = [
         "reconstruction_method",
@@ -703,6 +711,21 @@ def aggregate_priors_by_algorithm_source_valid_count(df, metric):
             true_component_count_mean=("true_component_count", "mean"),
             reconstructed_component_count_mean=("reconstructed_component_count", "mean"),
             matched_component_count_mean=("matched_component_count", "mean"),
+            matched_reconstructed_voxels_mean=(
+                "matched_reconstructed_voxels_mean",
+                "mean",
+            ),
+            matched_true_voxels_mean=("matched_true_voxels_mean", "mean"),
+            matched_voxel_count_ratio_mean=("matched_voxel_count_ratio_mean", "mean"),
+            matched_reconstructed_voxels_total_mean=(
+                "matched_reconstructed_voxels_total",
+                "mean",
+            ),
+            matched_true_voxels_total_mean=("matched_true_voxels_total", "mean"),
+            matched_voxel_count_ratio_total_mean=(
+                "matched_voxel_count_ratio_total",
+                "mean",
+            ),
         )
         .reset_index()
     )

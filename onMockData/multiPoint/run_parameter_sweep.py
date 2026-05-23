@@ -50,19 +50,19 @@ NUM_MEASUREMENT_VARIANTS = [
 # l1: beta range: 0.001 - 0.1: Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
 
 RECONSTRUCTION_PRIOR_VARIANTS = [
-    # [],  # No priors; useful for plain ML-EM / unregularized baseline.
-    # [
-    #     {"type": "smoothness", "beta": 0.01},
-    # ],
-    # [
-    #     {"type": "smoothness", "beta": 0.1},
-    # ],
-    # [
-    #     {"type": "smoothness", "beta": 0.5},
-    # ],
-    # [
-    #     {"type": "smoothness", "beta": 1.0},
-    # ],
+    [],  # No priors; useful for plain ML-EM / unregularized baseline.
+    [
+        {"type": "smoothness", "beta": 0.01},
+    ],
+    [
+        {"type": "smoothness", "beta": 0.1},
+    ],
+    [
+        {"type": "smoothness", "beta": 0.5},
+    ],
+    [
+        {"type": "smoothness", "beta": 1.0},
+    ],
     [
         {"type": "huber", "beta": 0.01, "delta": 0.1},
     ],
@@ -165,18 +165,18 @@ RECONSTRUCTION_PRIOR_VARIANTS = [
     [
         {"type": "rdp", "beta": 0.3, "gamma": 3.0},
     ],
-    # [
-    #     {"type": "l1", "beta": 0.001},
-    # ],
-    # [
-    #     {"type": "l1", "beta": 0.01},
-    # ],
-    # [
-    #     {"type": "l1", "beta": 0.1},
-    # ],
-    # [
-    #     {"type": "l1", "beta": 0.5},
-    # ]
+    [
+        {"type": "l1", "beta": 0.001},
+    ],
+    [
+        {"type": "l1", "beta": 0.01},
+    ],
+    [
+        {"type": "l1", "beta": 0.1},
+    ],
+    [
+        {"type": "l1", "beta": 0.5},
+    ]
 ]
 
 
@@ -254,6 +254,12 @@ SWEEP_CSV_COLUMNS = [
     "centroid_distance_max_cm",
     "closest_voxel_distance_mean_cm",
     "activity_recovery_mean",
+    "matched_reconstructed_voxels_mean",
+    "matched_true_voxels_mean",
+    "matched_voxel_count_ratio_mean",
+    "matched_reconstructed_voxels_total",
+    "matched_true_voxels_total",
+    "matched_voxel_count_ratio_total",
 ]
 
 
@@ -360,6 +366,19 @@ def iter_sweep_cases():
 
 def add_match_columns(row, component_matching):
     """Add only aggregate component metrics to one CSV row."""
+    matches = list(component_matching.get("matches", []))
+    reconstructed_voxels = np.asarray(
+        [match["reconstructed_voxels"] for match in matches],
+        dtype=float,
+    )
+    true_voxels = np.asarray(
+        [match["true_voxels"] for match in matches],
+        dtype=float,
+    )
+    voxel_ratios = reconstructed_voxels / np.maximum(true_voxels, 1.0)
+    reconstructed_voxel_total = float(np.sum(reconstructed_voxels))
+    true_voxel_total = float(np.sum(true_voxels))
+
     row.update(
         {
             "true_component_count": int(component_matching["true_component_count"]),
@@ -373,6 +392,22 @@ def add_match_columns(row, component_matching):
                 component_matching["mean_closest_voxel_distance_cm"]
             ),
             "activity_recovery_mean": float(component_matching["mean_activity_recovery_fraction"]),
+            "matched_reconstructed_voxels_mean": (
+                float(np.mean(reconstructed_voxels)) if len(reconstructed_voxels) else np.nan
+            ),
+            "matched_true_voxels_mean": (
+                float(np.mean(true_voxels)) if len(true_voxels) else np.nan
+            ),
+            "matched_voxel_count_ratio_mean": (
+                float(np.mean(voxel_ratios)) if len(voxel_ratios) else np.nan
+            ),
+            "matched_reconstructed_voxels_total": reconstructed_voxel_total,
+            "matched_true_voxels_total": true_voxel_total,
+            "matched_voxel_count_ratio_total": (
+                reconstructed_voxel_total / max(true_voxel_total, 1.0)
+                if len(matches)
+                else np.nan
+            ),
         }
     )
 
