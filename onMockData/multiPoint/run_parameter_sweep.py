@@ -47,27 +47,10 @@ NUM_MEASUREMENT_VARIANTS = [
 ]
 
 
-RECONSTRUCTION_SIEVE_SIGMA_CM_VARIANTS = [
-    0.0,  # Disabled.
-    0.01,
-    0.1,
-    0.3,
-    0.5,
-    0.6,
-    0.8,
-    1.0,
-    1.3,
-    1.5,
-]
-
-
 ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS = [
-    0.1,
     0.3,
     0.5,
     0.7,
-    0.8,
-    0.9
 ]
 
 # Available priors:
@@ -77,133 +60,40 @@ ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS = [
 # l1: beta range: 0.001 - 0.1: Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
 
 RECONSTRUCTION_PRIOR_VARIANTS = [
-    [],  # No priors; useful for plain ML-EM / unregularized baseline.
-    # [
-    #     {"type": "smoothness", "beta": 0.01},
-    # ],
-    # [
-    #     {"type": "smoothness", "beta": 0.1},
-    # ],
-    # [
-    #     {"type": "smoothness", "beta": 0.5},
-    # ],
-    # [
-    #     {"type": "smoothness", "beta": 1.0},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.01, "delta": 0.1},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.01, "delta": 0.3},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.01, "delta": 0.5},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.01, "delta": 0.8},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.01, "delta": 1.0},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.01, "delta": 1.5},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.01, "delta": 2.5},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.01, "delta": 3.0},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.01, "delta": 5.0},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.3, "delta": 0.1},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.3, "delta": 0.3},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.3, "delta": 0.5},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.3, "delta": 0.8},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.3, "delta": 1.0},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.3, "delta": 1.5},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.3, "delta": 2.5},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.3, "delta": 3.0},
-    # ],
-    # [
-    #     {"type": "huber", "beta": 0.3, "delta": 5.0},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.01, "gamma": 0.1},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.01, "gamma": 0.3},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.01, "gamma": 0.5},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.01, "gamma": 0.8},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.01, "gamma": 1.0},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.01, "gamma": 1.5},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.01, "gamma": 2.0},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.01, "gamma": 3.0},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.3, "gamma": 0.1},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.3, "gamma": 0.3},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.3, "gamma": 0.5},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.3, "gamma": 0.8},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.3, "gamma": 1.0},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.3, "gamma": 1.5},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.3, "gamma": 2.0},
-    # ],
-    # [
-    #     {"type": "rdp", "beta": 0.3, "gamma": 3.0},
-    # ],
+    [],
+
+    [{"type": "l1", "beta": 0.003}],
+    [{"type": "l1", "beta": 0.01}],
+    [{"type": "l1", "beta": 0.03}],
+    [{"type": "l1", "beta": 0.1}],
+
+    [{"type": "rdp", "beta": 0.03, "gamma": 1.0}],
+    [{"type": "rdp", "beta": 0.03, "gamma": 2.0}],
+    [{"type": "rdp", "beta": 0.1, "gamma": 1.5}],
+    [{"type": "rdp", "beta": 0.1, "gamma": 2.0}],
+    [{"type": "rdp", "beta": 0.1, "gamma": 3.0}],
+
+    [{"type": "huber", "beta": 0.003, "delta": 0.3}],
+    [{"type": "huber", "beta": 0.01, "delta": 0.1}],
+    [{"type": "huber", "beta": 0.01, "delta": 0.3}],
+    [{"type": "huber", "beta": 0.03, "delta": 0.3}],
+
     [
-        {"type": "l1", "beta": 0.001},
+        {"type": "l1", "beta": 0.003},
+        {"type": "rdp", "beta": 0.03, "gamma": 2.0},
     ],
     [
         {"type": "l1", "beta": 0.01},
+        {"type": "rdp", "beta": 0.03, "gamma": 2.0},
     ],
     [
-        {"type": "l1", "beta": 0.1},
+        {"type": "l1", "beta": 0.003},
+        {"type": "huber", "beta": 0.01, "delta": 0.3},
     ],
     [
-        {"type": "l1", "beta": 0.5},
-    ]
+        {"type": "rdp", "beta": 0.03, "gamma": 2.0},
+        {"type": "huber", "beta": 0.003, "delta": 0.3},
+    ],
 ]
 
 
@@ -249,7 +139,7 @@ FIXED_OVERRIDES = {
 
 
 OUTPUT_DIR = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
-OUTPUT_CSV = OUTPUT_DIR / "reconstruction_sieve_l1_sweep.csv"
+OUTPUT_CSV = OUTPUT_DIR / "reconstruction_method_prior_sources_sweep_v2.csv"
 PAUSE_TOGGLE_KEY = "0"
 
 SWEEP_CSV_COLUMNS = [
@@ -367,7 +257,6 @@ def iter_sweep_cases():
     for (
         method,
         reconstruction_priors,
-        reconstruction_sieve_sigma_cm,
         activity_component_threshold_fraction,
         source_case,
         iteration_case,
@@ -375,7 +264,6 @@ def iter_sweep_cases():
     ) in product(
         RECONSTRUCTION_METHODS,
         RECONSTRUCTION_PRIOR_VARIANTS,
-        RECONSTRUCTION_SIEVE_SIGMA_CM_VARIANTS,
         ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS,
         TRUE_SOURCE_CASES,
         ITERATION_CASES,
@@ -385,7 +273,6 @@ def iter_sweep_cases():
             **FIXED_OVERRIDES,
             "reconstruction_method": method,
             "RECONSTRUCTION_PRIORS": reconstruction_priors,
-            "RECONSTRUCTION_SIEVE_SIGMA_CM": reconstruction_sieve_sigma_cm,
             "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": activity_component_threshold_fraction,
             "TRUE_SOURCE_SPECS": source_case["true_sources"],
             "NUM_ITERATIONS": iteration_case["num_iterations"],
@@ -398,7 +285,6 @@ def iter_sweep_cases():
                 "name": prior_variant_name(reconstruction_priors),
                 "priors": reconstruction_priors,
             },
-            "reconstruction_sieve_sigma_cm": float(reconstruction_sieve_sigma_cm),
             "activity_component_threshold_fraction": float(
                 activity_component_threshold_fraction
             ),
@@ -475,7 +361,6 @@ def summarize_run(case_index, case, experiment, elapsed_seconds):
         "history_interval": int(case["iteration_case"]["history_interval"]),
         "true_sources": _csv_value(case["source_case"]["true_sources"]),
         "reconstruction_priors": _csv_value(case["prior_case"]["priors"]),
-        "reconstruction_sieve_sigma_cm": float(case["reconstruction_sieve_sigma_cm"]),
         "activity_component_threshold_fraction": float(
             case["activity_component_threshold_fraction"]
         ),
@@ -527,7 +412,6 @@ def main():
 
     print(f"Running {len(cases)} reconstruction sweep cases")
     print(f"Output CSV: {OUTPUT_CSV}")
-    print(f"Sieve sigma variants [cm]: {RECONSTRUCTION_SIEVE_SIGMA_CM_VARIANTS}")
     print(
         "Component threshold variants: "
         f"{ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS}"
@@ -555,7 +439,6 @@ def main():
             f"method={row['reconstruction_method']}, "
             f"measurements={row['num_measurements']}, "
             f"iterations={row['num_iterations']}/{row['history_interval']}, "
-            f"sieve_sigma={row['reconstruction_sieve_sigma_cm']:.3g} cm, "
             f"component_threshold={row['activity_component_threshold_fraction']:.3g}, "
             f"priors={row['prior_case']} -> "
             f"cosine={row['shape_cosine']:.4f}, "
