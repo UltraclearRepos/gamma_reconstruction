@@ -87,6 +87,8 @@ def reconstruct_sources(
     bsrem_relaxation_initial=1.0,
     bsrem_relaxation_decay=0.01,
     bsrem_relaxation_power=1.0,
+    candidate_grid_override=None,
+    initial_activity=None,
 ):
     """
     Run one multi-source reconstruction method using a plain if/elif dispatcher.
@@ -94,7 +96,7 @@ def reconstruct_sources(
     method = method.strip().lower().replace("-", "_")
 
     if method in ("mlem", "ml_em"):
-        return mlem_reconstruction(
+        result = mlem_reconstruction(
             counts=counts,
             geometry=geometry,
             rotations=rotations,
@@ -117,10 +119,14 @@ def reconstruct_sources(
             voxel_size_cm=voxel_size_cm,
             num_iterations=num_iterations,
             history_interval=history_interval,
+            candidate_grid_override=candidate_grid_override,
+            initial_activity=initial_activity,
         )
+        result["method"] = "mlem"
+        return result
 
     if method in ("map_em", "map"):
-        return mapem_reconstruction(
+        result = mapem_reconstruction(
             counts=counts,
             geometry=geometry,
             rotations=rotations,
@@ -145,10 +151,14 @@ def reconstruct_sources(
             history_interval=history_interval,
             reconstruction_priors=reconstruction_priors,
             reconstruction_sieve_sigma_cm=reconstruction_sieve_sigma_cm,
+            candidate_grid_override=candidate_grid_override,
+            initial_activity=initial_activity,
         )
+        result["method"] = "map_em"
+        return result
 
     if method == "bsrem":
-        return bsrem_reconstruction(
+        result = bsrem_reconstruction(
             counts=counts,
             geometry=geometry,
             rotations=rotations,
@@ -177,7 +187,11 @@ def reconstruct_sources(
             relaxation_initial=bsrem_relaxation_initial,
             relaxation_decay=bsrem_relaxation_decay,
             relaxation_power=bsrem_relaxation_power,
+            candidate_grid_override=candidate_grid_override,
+            initial_activity=initial_activity,
         )
+        result["method"] = "bsrem"
+        return result
 
     raise ValueError(
         f"Unknown multi-source reconstruction method '{method}'. "
@@ -242,6 +256,312 @@ def make_candidate_grid_data(
         "grid_shape": (len(xs), len(ys), len(zs)),
         "voxel_size_cm": voxel_size_cm,
     }
+
+
+def resolve_candidate_grid(
+    trajectory_center,
+    search_radius,
+    cylinder_height,
+    voxel_size_cm,
+    candidate_grid_override=None,
+):
+    """Return either a fresh full candidate grid or a validated caller-provided subset."""
+    if candidate_grid_override is None:
+        return make_candidate_grid_data(
+            trajectory_center=trajectory_center,
+            search_radius=search_radius,
+            cylinder_height=cylinder_height,
+            voxel_size_cm=voxel_size_cm,
+        )
+
+    required_keys = (
+        "candidate_positions",
+        "candidate_flat_indices",
+        "grid_shape",
+        "voxel_size_cm",
+    )
+    missing = [key for key in required_keys if key not in candidate_grid_override]
+    if missing:
+        raise KeyError(f"candidate_grid_override missing keys: {missing}")
+
+    candidate_positions = np.asarray(
+        candidate_grid_override["candidate_positions"],
+        dtype=float,
+    )
+    candidate_flat_indices = np.asarray(
+        candidate_grid_override["candidate_flat_indices"],
+        dtype=np.int64,
+    )
+    if candidate_positions.ndim != 2 or candidate_positions.shape[1] != 3:
+        raise ValueError("candidate_grid_override candidate_positions must have shape (N, 3).")
+    if candidate_flat_indices.shape != (len(candidate_positions),):
+        raise ValueError("candidate_grid_override candidate_flat_indices must match candidate_positions.")
+    if len(candidate_positions) == 0:
+        raise ValueError("candidate_grid_override must contain at least one candidate voxel.")
+
+    return {
+        **dict(candidate_grid_override),
+        "candidate_positions": candidate_positions,
+        "candidate_flat_indices": candidate_flat_indices,
+        "grid_shape": tuple(int(value) for value in candidate_grid_override["grid_shape"]),
+        "voxel_size_cm": float(candidate_grid_override["voxel_size_cm"]),
+    }
+
+
+def initialize_activity_tensor(initial_activity, candidate_positions, initial_activity_value, device):
+    """Create the reconstruction activity tensor, optionally from a caller-provided start."""
+    if initial_activity is None:
+        return torch.full(
+            (len(candidate_positions),),
+            max(float(initial_activity_value), EPS),
+            dtype=TORCH_DTYPE,
+            device=device,
+        )
+
+    initial_activity = torch.as_tensor(initial_activity, dtype=TORCH_DTYPE, device=device)
+    if initial_activity.shape != (len(candidate_positions),):
+        raise ValueError("initial_activity must match the candidate voxel count.")
+    return torch.clamp(initial_activity, min=EPS).clone()
+
+
+def make_threshold_refinement_grid(
+    result,
+    threshold_fraction,
+    padding_cm,
+    min_component_voxels=1,
+):
+    """Build a candidate-grid subset from thresholded reconstructed activity."""
+    from metrics import find_activity_components
+
+    activity = np.maximum(np.asarray(result["activity"], dtype=float), 0.0)
+    candidate_positions = np.asarray(result["candidate_positions"], dtype=float)
+    if len(activity) == 0 or float(np.max(activity)) <= 0.0:
+        return None
+
+    threshold_fraction = float(threshold_fraction)
+    components = find_activity_components(
+        activity=activity,
+        candidate_positions=candidate_positions,
+        candidate_flat_indices=result["candidate_flat_indices"],
+        grid_shape=result["grid_shape"],
+        threshold_fraction=threshold_fraction,
+        min_component_voxels=min_component_voxels,
+    )
+    support_mask = np.zeros(len(activity), dtype=bool)
+    for component in components:
+        support_mask[np.asarray(component["indices"], dtype=np.int64)] = True
+    if not np.any(support_mask):
+        return None
+
+    padding_cm = float(padding_cm)
+    if padding_cm > 0.0:
+        active_positions = candidate_positions[support_mask]
+        padded_mask = np.zeros(len(candidate_positions), dtype=bool)
+        padding_squared = padding_cm * padding_cm
+        chunk_size = 2048
+        for start in range(0, len(candidate_positions), chunk_size):
+            stop = min(start + chunk_size, len(candidate_positions))
+            squared_distances = np.sum(
+                (
+                    candidate_positions[start:stop, np.newaxis, :]
+                    - active_positions[np.newaxis, :, :]
+                )
+                ** 2,
+                axis=2,
+            )
+            padded_mask[start:stop] = np.any(squared_distances <= padding_squared, axis=1)
+        support_mask = padded_mask
+
+    support_indices = np.flatnonzero(support_mask).astype(np.int64)
+    return {
+        "candidate_positions": candidate_positions[support_indices].copy(),
+        "candidate_flat_indices": np.asarray(
+            result["candidate_flat_indices"],
+            dtype=np.int64,
+        )[support_indices].copy(),
+        "grid_shape": tuple(result["grid_shape"]),
+        "voxel_size_cm": float(result["voxel_size_cm"]),
+        "source_candidate_indices": support_indices,
+        "threshold_fraction": threshold_fraction,
+        "padding_cm": padding_cm,
+        "min_component_voxels": int(min_component_voxels),
+    }
+
+
+def combine_reconstruction_timings(initial_result, refinement_result):
+    """Merge initial and refinement timing dictionaries for summary printing."""
+    initial_timings = dict(initial_result.get("timings", {}))
+    refinement_timings = dict(refinement_result.get("timings", {}))
+    combined = dict(initial_timings)
+    for key, value in refinement_timings.items():
+        combined[f"refinement_{key}"] = value
+
+    for key in ("system_matrix_seconds", "transfer_seconds"):
+        combined[key] = float(initial_timings.get(key, 0.0)) + float(
+            refinement_timings.get(key, 0.0)
+        )
+
+    for key in (
+        "mlem_iterations_seconds",
+        "mapem_iterations_seconds",
+        "bsrem_iterations_seconds",
+    ):
+        total = float(initial_timings.get(key, 0.0)) + float(
+            refinement_timings.get(key, 0.0)
+        )
+        if total > 0.0:
+            combined[key] = total
+    return combined
+
+
+def expand_threshold_refinement_result(initial_result, refinement_result, support_grid):
+    """Embed a support-only refinement result back into the full initial voxel grid."""
+    support_indices = np.asarray(support_grid["source_candidate_indices"], dtype=np.int64)
+    full_voxel_count = len(initial_result["candidate_positions"])
+
+    full_activity = np.zeros(full_voxel_count, dtype=float)
+    full_activity[support_indices] = np.asarray(refinement_result["activity"], dtype=float)
+
+    refined_activity_history = []
+    for activity_snapshot in refinement_result["activity_history"]:
+        full_snapshot = np.zeros(full_voxel_count, dtype=float)
+        full_snapshot[support_indices] = np.asarray(activity_snapshot, dtype=float)
+        refined_activity_history.append(full_snapshot)
+
+    iteration_offset = 0
+    if initial_result.get("history"):
+        iteration_offset = int(initial_result["history"][-1].get("iteration", 0))
+    refined_history = []
+    for history_item in refinement_result["history"]:
+        item = dict(history_item)
+        item["iteration"] = float(iteration_offset + int(history_item.get("iteration", 0)))
+        item["stage"] = "threshold_refinement"
+        refined_history.append(item)
+
+    expanded = dict(refinement_result)
+    expanded.update(
+        {
+            "candidate_positions": np.asarray(initial_result["candidate_positions"]).copy(),
+            "candidate_flat_indices": np.asarray(initial_result["candidate_flat_indices"]).copy(),
+            "grid_shape": tuple(initial_result["grid_shape"]),
+            "voxel_size_cm": float(initial_result["voxel_size_cm"]),
+            "activity": full_activity,
+            "activity_history": [
+                np.asarray(snapshot, dtype=float).copy()
+                for snapshot in initial_result["activity_history"]
+            ]
+            + refined_activity_history,
+            "history": [dict(item) for item in initial_result["history"]] + refined_history,
+            "system_matrix": np.asarray(initial_result["system_matrix"]).copy(),
+            "timings": combine_reconstruction_timings(initial_result, refinement_result),
+            "threshold_refinement": {
+                "enabled": True,
+                "support_voxel_count": int(len(support_indices)),
+                "full_voxel_count": int(full_voxel_count),
+                "threshold_fraction": float(support_grid["threshold_fraction"]),
+                "padding_cm": float(support_grid["padding_cm"]),
+                "min_component_voxels": int(support_grid["min_component_voxels"]),
+                "method": str(refinement_result.get("method", "unknown")),
+            },
+        }
+    )
+    return expanded
+
+
+def refine_thresholded_reconstruction(
+    initial_result,
+    counts,
+    geometry,
+    rotations,
+    translations,
+    assumed_backgrounds,
+    assumed_channel_scales,
+    assumed_distance_power,
+    trajectory_center,
+    search_radius,
+    cylinder_height,
+    threshold_fraction,
+    padding_cm=0.0,
+    min_component_voxels=1,
+    assumed_angular_peak_angle_deg=0.0,
+    assumed_angular_width_deg=None,
+    assumed_collimator_half_angle_deg=None,
+    assumed_collimator_edge_width_deg=3.0,
+    assumed_collimator_leakage=0.0,
+    assumed_skin_thickness_cm=0.0,
+    assumed_skin_mu_per_cm=0.0,
+    assumed_detector_intrinsic_efficiency=1.0,
+    assumed_response_scale=1.0,
+    method="same",
+    voxel_size_cm=1.0,
+    num_iterations=50,
+    history_interval=10,
+    reconstruction_priors=None,
+    reconstruction_sieve_sigma_cm=0.0,
+    bsrem_num_subsets=8,
+    bsrem_relaxation_initial=1.0,
+    bsrem_relaxation_decay=0.01,
+    bsrem_relaxation_power=1.0,
+):
+    """Run a second reconstruction pass only on thresholded support voxels."""
+    support_grid = make_threshold_refinement_grid(
+        result=initial_result,
+        threshold_fraction=threshold_fraction,
+        padding_cm=padding_cm,
+        min_component_voxels=min_component_voxels,
+    )
+    if support_grid is None:
+        refined = dict(initial_result)
+        refined["threshold_refinement"] = {
+            "enabled": False,
+            "reason": "no voxels above threshold",
+        }
+        return refined
+
+    method = str(method).strip().lower()
+    if method == "same":
+        method = str(initial_result.get("method", "bsrem"))
+
+    support_indices = support_grid["source_candidate_indices"]
+    refinement_result = reconstruct_sources(
+        counts=counts,
+        geometry=geometry,
+        rotations=rotations,
+        translations=translations,
+        assumed_backgrounds=assumed_backgrounds,
+        assumed_channel_scales=assumed_channel_scales,
+        assumed_distance_power=assumed_distance_power,
+        assumed_angular_peak_angle_deg=assumed_angular_peak_angle_deg,
+        assumed_angular_width_deg=assumed_angular_width_deg,
+        assumed_collimator_half_angle_deg=assumed_collimator_half_angle_deg,
+        assumed_collimator_edge_width_deg=assumed_collimator_edge_width_deg,
+        assumed_collimator_leakage=assumed_collimator_leakage,
+        assumed_skin_thickness_cm=assumed_skin_thickness_cm,
+        assumed_skin_mu_per_cm=assumed_skin_mu_per_cm,
+        assumed_detector_intrinsic_efficiency=assumed_detector_intrinsic_efficiency,
+        assumed_response_scale=assumed_response_scale,
+        trajectory_center=trajectory_center,
+        search_radius=search_radius,
+        cylinder_height=cylinder_height,
+        method=method,
+        voxel_size_cm=voxel_size_cm,
+        num_iterations=num_iterations,
+        history_interval=history_interval,
+        reconstruction_priors=reconstruction_priors,
+        reconstruction_sieve_sigma_cm=reconstruction_sieve_sigma_cm,
+        bsrem_num_subsets=bsrem_num_subsets,
+        bsrem_relaxation_initial=bsrem_relaxation_initial,
+        bsrem_relaxation_decay=bsrem_relaxation_decay,
+        bsrem_relaxation_power=bsrem_relaxation_power,
+        candidate_grid_override=support_grid,
+        initial_activity=initial_result["activity"][support_indices],
+    )
+    refinement_result["method"] = method
+    return expand_threshold_refinement_result(
+        initial_result=initial_result,
+        refinement_result=refinement_result,
+        support_grid=support_grid,
+    )
 
 
 def gaussian_kernel_1d(sigma_voxels, device):
@@ -593,6 +913,8 @@ def mlem_reconstruction(
     voxel_size_cm=1.0,
     num_iterations=40,
     history_interval=5,
+    candidate_grid_override=None,
+    initial_activity=None,
 ):
     """
     Reconstruct a voxel activity map with ML-EM.
@@ -602,11 +924,12 @@ def mlem_reconstruction(
 
     The main ML-EM result is the full activity map.
     """
-    candidate_grid = make_candidate_grid_data(
+    candidate_grid = resolve_candidate_grid(
         trajectory_center=trajectory_center,
         search_radius=search_radius,
         cylinder_height=cylinder_height,
         voxel_size_cm=voxel_size_cm,
+        candidate_grid_override=candidate_grid_override,
     )
     candidate_positions = candidate_grid["candidate_positions"]
     device = get_cuda_device()
@@ -647,16 +970,16 @@ def mlem_reconstruction(
     # Sensitivity tells us how much each voxel contribute to detector response, not for each measurement, but in total
 
     initial_signal = torch.clamp(counts_flat - backgrounds_flat, min=0.0)
-    initial_activity = tensor_to_float(
+    initial_activity_value = tensor_to_float(
         torch.sum(initial_signal) / torch.clamp(torch.sum(sensitivity), min=EPS)
     )
     
-    activity = torch.full(
-        (len(candidate_positions),),
-        max(initial_activity, EPS),
-        dtype=TORCH_DTYPE,
+    activity = initialize_activity_tensor(
+        initial_activity=initial_activity,
+        candidate_positions=candidate_positions,
+        initial_activity_value=initial_activity_value,
         device=device,
-    ) # Start from a flat activity map: every candidate voxel gets the same positive activity.
+    ) # Start from a flat activity map unless the caller provides a refinement seed.
       # ML-EM will then move activity toward voxels whose H columns best explain the counts.
 
     history = []
@@ -742,6 +1065,8 @@ def mapem_reconstruction(
     history_interval=5,
     reconstruction_priors=None,
     reconstruction_sieve_sigma_cm=0.0,
+    candidate_grid_override=None,
+    initial_activity=None,
 ):
     """
     Reconstruct a voxel activity map with MAP-EM.
@@ -750,11 +1075,12 @@ def mapem_reconstruction(
     priors are supplied as config dictionaries and enter the one-step-late
     denominator.
     """
-    candidate_grid = make_candidate_grid_data(
+    candidate_grid = resolve_candidate_grid(
         trajectory_center=trajectory_center,
         search_radius=search_radius,
         cylinder_height=cylinder_height,
         voxel_size_cm=voxel_size_cm,
+        candidate_grid_override=candidate_grid_override,
     )
     candidate_positions = candidate_grid["candidate_positions"]
     device = get_cuda_device()
@@ -796,13 +1122,13 @@ def mapem_reconstruction(
 
     sensitivity = torch.sum(system_matrix_tensor, dim=0)
     initial_signal = torch.clamp(counts_flat - backgrounds_flat, min=0.0)
-    initial_activity = tensor_to_float(
+    initial_activity_value = tensor_to_float(
         torch.sum(initial_signal) / torch.clamp(torch.sum(sensitivity), min=EPS)
     )
-    activity = torch.full(
-        (len(candidate_positions),),
-        max(initial_activity, EPS),
-        dtype=TORCH_DTYPE,
+    activity = initialize_activity_tensor(
+        initial_activity=initial_activity,
+        candidate_positions=candidate_positions,
+        initial_activity_value=initial_activity_value,
         device=device,
     )
 
@@ -913,6 +1239,8 @@ def bsrem_reconstruction(
     relaxation_decay=0.01,
     relaxation_power=1.0,
     max_relative_update=2.0,
+    candidate_grid_override=None,
+    initial_activity=None,
 ):
     """
     Reconstruct a voxel activity map with BSREM.
@@ -920,11 +1248,12 @@ def bsrem_reconstruction(
     BSREM uses ordered subsets like OSEM, but applies a relaxation schedule and
     the same penalized-likelihood prior gradient used by MAP-EM.
     """
-    candidate_grid = make_candidate_grid_data(
+    candidate_grid = resolve_candidate_grid(
         trajectory_center=trajectory_center,
         search_radius=search_radius,
         cylinder_height=cylinder_height,
         voxel_size_cm=voxel_size_cm,
+        candidate_grid_override=candidate_grid_override,
     )
     candidate_positions = candidate_grid["candidate_positions"]
     device = get_cuda_device()
@@ -972,13 +1301,13 @@ def bsrem_reconstruction(
 
     sensitivity = torch.sum(system_matrix_tensor, dim=0)
     initial_signal = torch.clamp(counts_flat - backgrounds_flat, min=0.0)
-    initial_activity = tensor_to_float(
+    initial_activity_value = tensor_to_float(
         torch.sum(initial_signal) / torch.clamp(torch.sum(sensitivity), min=EPS)
     )
-    activity = torch.full(
-        (len(candidate_positions),),
-        max(initial_activity, EPS),
-        dtype=TORCH_DTYPE,
+    activity = initialize_activity_tensor(
+        initial_activity=initial_activity,
+        candidate_positions=candidate_positions,
+        initial_activity_value=initial_activity_value,
         device=device,
     )
 

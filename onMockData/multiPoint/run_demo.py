@@ -13,7 +13,7 @@ if str(ON_MOCK_DATA_DIR) not in sys.path:
     sys.path.insert(0, str(ON_MOCK_DATA_DIR))
 
 from common.forward_model import compute_detector_response_diagnostics
-from reconstruction_algorithms import reconstruct_sources
+from reconstruction_algorithms import reconstruct_sources, refine_thresholded_reconstruction
 from metrics import (
     print_activity_component_matching_summary,
     print_activity_map_similarity_summary,
@@ -49,11 +49,11 @@ def make_default_config():
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
         "NUM_MEASUREMENTS": 100,  # Number of detector positions / generated measurements.
-        "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
-            {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
-            {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
-            # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
-        ],
+        # "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
+        #     {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
+        #     {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
+        #     # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
+        # ],
         # "TRUE_SOURCE_SPECS": [
         #     # Lewy płat: głębiej, rozmyty
         #     {"position": (-2.5, 1.5, -1.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
@@ -62,19 +62,19 @@ def make_default_config():
         #     # "Gorący guzek": bardzo blisko skóry (płytko), mały, wysoka aktywność
         #     {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.5},
         # ],
-        # "TRUE_SOURCE_SPECS": [
-        #     # Główne źródło ukryte głęboko w tkance
-        #     {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
-        #     # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
-        #     {"position": (0.0, 6.0, 0.0), "strength_per_second": 2000.0, "spread_cm": 0.5},
-        #     # Punkt referencyjny z boku dla oceny ogólnej geometrii
-        #     {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
-        # ],
+        "TRUE_SOURCE_SPECS": [
+            # Główne źródło ukryte głęboko w tkance
+            {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
+            # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
+            {"position": (0.0, 6.0, 0.0), "strength_per_second": 5000.0, "spread_cm": 0.5},
+            # Punkt referencyjny z boku dla oceny ogólnej geometrii
+            {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
+        ],
         # "TRUE_SOURCE_SPECS": [
         #     # Masywne, rozmyte źródło centralne
         #     {"position": (-1.0, 0.0, 0.0), "strength_per_second": 20000.0, "spread_cm": 2.0},
         #     # Bardzo małe, słabe, odseparowane geometrycznie źródło
-        #     {"position": (4.0, 4.0, 3.0), "strength_per_second": 3500.0, "spread_cm": 0.5},
+        #     {"position": (4.0, 4.0, 3.0), "strength_per_second": 5500.0, "spread_cm": 0.5},
         #     # Średnie źródło na "dolnej" krawędzi trajektorii Z
         #     {"position": (2.0, -3.0, -4.0), "strength_per_second": 5000.0, "spread_cm": 0.7},
         # ],
@@ -141,7 +141,7 @@ def make_default_config():
             # {"type": "smoothness", "beta": 0.1},  # Penalizes differences from the six-neighbor local mean; smooths noisy voxel spikes.
             # {"type": "huber", "beta": 0.1, "delta": 0.3},  # Smooths small neighbor differences while preserving sharper blob edges; delta is the activity-difference scale where the penalty changes from quadratic-like to edge-preserving, try 0.1-5.0 depending on reconstructed activity scale.
             # {"type": "rdp", "beta": 0.001, "gamma": 0.3},  # Relative Difference Penalty; smooths weak/noisy regions while being gentler near strong activity contrast; gamma controls edge preservation in the relative denominator, try 0.1-3.0, with larger values preserving stronger contrasts.
-            {"type": "tv", "beta": 0.1, "epsilon": 0.001},  # Smoothed total variation; encourages compact blobs with sharper boundaries than Gaussian sieve.
+            {"type": "tv", "beta": 0.01, "epsilon": 0.001},  # Smoothed total variation; encourages compact blobs with sharper boundaries than Gaussian sieve.
             {"type": "l1", "beta": 0.01},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
         ],  # Priors shared by MAP-EM and BSREM
         "RECONSTRUCTION_SIEVE_SIGMA_CM": 0.0,  # Optional post-update Gaussian sieve filter; 0 disables it.
@@ -149,6 +149,16 @@ def make_default_config():
         "BSREM_RELAXATION_INITIAL": 1.0,  # Initial BSREM relaxation step.
         "BSREM_RELAXATION_DECAY": 0.01,  # Larger values damp later BSREM iterations more strongly.
         "BSREM_RELAXATION_POWER": 1.0,  # Exponent used by the BSREM relaxation schedule.
+
+        # Optional second reconstruction pass on voxels selected from the thresholded map.
+        "ENABLE_THRESHOLD_REFINEMENT": True,  # If true, refit only thresholded voxels plus optional padding.
+        "THRESHOLD_REFINEMENT_METHOD": "same",  # "same", "mlem", "map_em", or "bsrem".
+        "THRESHOLD_REFINEMENT_NUM_ITERATIONS": 100,
+        "THRESHOLD_REFINEMENT_HISTORY_INTERVAL": 10,
+        "THRESHOLD_REFINEMENT_PRIORS": [],  # Priors used only in the refinement pass.
+        "THRESHOLD_REFINEMENT_SIEVE_SIGMA_CM": 0.0,
+        "THRESHOLD_REFINEMENT_PADDING_CM": 0.75,  # Add nearby voxels around the thresholded support.
+
         # Activity-map metrics.
         "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.1,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
         "ACTIVITY_COMPONENT_MIN_VOXELS": 3,  # Minimum connected voxels needed to report a blob.
@@ -264,7 +274,7 @@ def run_experiment(overrides=None):
     }
 
     reconstruction_start_time = perf_counter()
-    result = reconstruct_sources(
+    initial_result = reconstruct_sources(
         counts=dataset["counts"],
         geometry=dataset["geometry"],
         rotations=dataset["rotations"],
@@ -284,6 +294,37 @@ def run_experiment(overrides=None):
         bsrem_relaxation_decay=config["BSREM_RELAXATION_DECAY"],
         bsrem_relaxation_power=config["BSREM_RELAXATION_POWER"],
     )
+    result = initial_result
+
+    if config["ENABLE_THRESHOLD_REFINEMENT"]:
+        result = refine_thresholded_reconstruction(
+            initial_result=initial_result,
+            counts=dataset["counts"],
+            geometry=dataset["geometry"],
+            rotations=dataset["rotations"],
+            translations=dataset["translations"],
+            **assumed_model,
+            trajectory_center=dataset["trajectory_center"],
+            search_radius=dataset["search_radius"],
+            cylinder_height=dataset["cylinder_height"],
+            threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
+            padding_cm=config["THRESHOLD_REFINEMENT_PADDING_CM"],
+            min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+            method=(
+                config["reconstruction_method"]
+                if str(config["THRESHOLD_REFINEMENT_METHOD"]).strip().lower() == "same"
+                else config["THRESHOLD_REFINEMENT_METHOD"]
+            ),
+            voxel_size_cm=config["VOXEL_SIZE_CM"],
+            num_iterations=config["THRESHOLD_REFINEMENT_NUM_ITERATIONS"],
+            history_interval=config["THRESHOLD_REFINEMENT_HISTORY_INTERVAL"],
+            reconstruction_priors=config["THRESHOLD_REFINEMENT_PRIORS"],
+            reconstruction_sieve_sigma_cm=config["THRESHOLD_REFINEMENT_SIEVE_SIGMA_CM"],
+            bsrem_num_subsets=config["BSREM_NUM_SUBSETS"],
+            bsrem_relaxation_initial=config["BSREM_RELAXATION_INITIAL"],
+            bsrem_relaxation_decay=config["BSREM_RELAXATION_DECAY"],
+            bsrem_relaxation_power=config["BSREM_RELAXATION_POWER"],
+        )
     reconstruction_elapsed_seconds = perf_counter() - reconstruction_start_time
     true_voxel_activity = voxelize_true_source_activity(
         candidate_positions=result["candidate_positions"],
@@ -304,13 +345,30 @@ def run_experiment(overrides=None):
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
     )
+    initial_activity_map_similarity = summarize_activity_map_similarity(
+        true_activity=true_voxel_activity,
+        reconstructed_activity=initial_result["activity"],
+    )
+    initial_activity_component_matching = summarize_activity_component_matching(
+        true_activity=true_voxel_activity,
+        reconstructed_activity=initial_result["activity"],
+        candidate_positions=initial_result["candidate_positions"],
+        candidate_flat_indices=initial_result["candidate_flat_indices"],
+        grid_shape=initial_result["grid_shape"],
+        true_sources=dataset["true_sources"],
+        threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
+        min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+    )
 
     return {
         "config": config,
         "dataset": dataset,
+        "initial_result": initial_result,
         "result": result,
         "reconstruction_elapsed_seconds": reconstruction_elapsed_seconds,
         "true_voxel_activity": true_voxel_activity,
+        "initial_activity_map_similarity": initial_activity_map_similarity,
+        "initial_activity_component_matching": initial_activity_component_matching,
         "activity_map_similarity": activity_map_similarity,
         "activity_component_matching": activity_component_matching,
     }
@@ -398,6 +456,7 @@ def main():
     experiment = run_experiment()
     config = experiment["config"]
     dataset = experiment["dataset"]
+    initial_result = experiment["initial_result"]
     result = experiment["result"]
 
     print()
@@ -417,6 +476,32 @@ def main():
             f"transfer={timings['transfer_seconds']:.3f}, "
             f"iterations={iteration_seconds:.3f}"
         )
+    threshold_refinement = result.get("threshold_refinement")
+    if threshold_refinement:
+        if threshold_refinement.get("enabled"):
+            print(
+                "Threshold refinement:    "
+                f"{threshold_refinement['support_voxel_count']}/"
+                f"{threshold_refinement['full_voxel_count']} voxels, "
+                f"threshold={threshold_refinement['threshold_fraction']:.3g}, "
+                f"min_voxels={threshold_refinement['min_component_voxels']}, "
+                f"padding={threshold_refinement['padding_cm']:.3g} cm, "
+                f"method={threshold_refinement['method']}"
+            )
+        else:
+            print(
+                "Threshold refinement:    skipped "
+                f"({threshold_refinement.get('reason', 'disabled')})"
+            )
+    if result.get("threshold_refinement", {}).get("enabled"):
+        print()
+        print("=== Before threshold refinement ===")
+        print_activity_map_similarity_summary(experiment["initial_activity_map_similarity"])
+        print_activity_component_matching_summary(
+            experiment["initial_activity_component_matching"]
+        )
+        print()
+        print("=== After threshold refinement ===")
     print_activity_map_similarity_summary(experiment["activity_map_similarity"])
     print_activity_component_matching_summary(experiment["activity_component_matching"])
 
@@ -453,12 +538,24 @@ def main():
     )
     visualize_activity_map_comparison(
         dataset,
+        candidate_positions=initial_result["candidate_positions"],
+        true_activity=true_voxel_activity,
+        reconstructed_activity=initial_result["activity"],
+        component_matching=experiment["initial_activity_component_matching"],
+        voxel_size_cm=initial_result["voxel_size_cm"],
+        save_path=output_dir / "activity_map_comparison_before_refinement.png",
+        show=False,
+        max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
+        axis_limits=config["AXIS_LIMITS_3D"],
+    )
+    visualize_activity_map_comparison(
+        dataset,
         candidate_positions=result["candidate_positions"],
         true_activity=true_voxel_activity,
         reconstructed_activity=result["activity"],
         component_matching=experiment["activity_component_matching"],
         voxel_size_cm=result["voxel_size_cm"],
-        save_path=output_dir / "activity_map_comparison.png",
+        save_path=output_dir / "activity_map_comparison_after_refinement.png",
         show=False,
         max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
         axis_limits=config["AXIS_LIMITS_3D"],

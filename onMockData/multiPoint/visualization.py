@@ -342,14 +342,21 @@ def visualize_activity_map_comparison(
     reconstructed_activity = np.asarray(reconstructed_activity, dtype=float)
 
     has_component_panel = component_matching is not None
-    fig = plt.figure(figsize=(15, 13) if has_component_panel else (15, 7))
-    axes = [
-        fig.add_subplot(221 if has_component_panel else 121, projection="3d"),
-        fig.add_subplot(222 if has_component_panel else 122, projection="3d"),
-    ]
     if has_component_panel:
-        axes.append(fig.add_subplot(223, projection="3d"))
-        axes.append(fig.add_subplot(224, projection="3d"))
+        fig = plt.figure(figsize=(18, 13))
+        axes = [
+            fig.add_subplot(231, projection="3d"),
+            fig.add_subplot(232, projection="3d"),
+            fig.add_subplot(234, projection="3d"),
+            fig.add_subplot(235, projection="3d"),
+            fig.add_subplot(236, projection="3d"),
+        ]
+    else:
+        fig = plt.figure(figsize=(15, 7))
+        axes = [
+            fig.add_subplot(121, projection="3d"),
+            fig.add_subplot(122, projection="3d"),
+        ]
 
     def plot_activity_panel(ax, activity, title, cmap, label, show_search_bounds=False):
         points_for_scale = [translations, true_source_positions]
@@ -438,6 +445,16 @@ def visualize_activity_map_comparison(
             axis_limits=axis_limits,
             title="Activity blob matching",
         )
+        plot_component_filtered_thresholded_activity_panel(
+            ax=axes[4],
+            dataset=dataset,
+            candidate_positions=candidate_positions,
+            true_activity=true_activity,
+            reconstructed_activity=reconstructed_activity,
+            component_matching=component_matching,
+            axis_limits=axis_limits,
+            title="Thresholded voxels in accepted components",
+        )
 
     fig.suptitle("True vs reconstructed activity maps")
     finalize_figure(fig, save_path=save_path, show=show)
@@ -452,6 +469,8 @@ def plot_thresholded_activity_panel(
     threshold_fraction,
     axis_limits=None,
     title="Voxels above blob threshold",
+    reconstructed_color_limits=None,
+    reconstructed_mask_override=None,
 ):
     """Draw full true-source voxels and reconstructed voxels above the blob threshold."""
     translations = np.asarray(dataset["translations"], dtype=float)
@@ -473,8 +492,17 @@ def plot_thresholded_activity_panel(
     )
 
     true_mask = true_activity > EPS
-    reconstructed_mask = np.zeros_like(reconstructed_activity, dtype=bool)
-    if len(reconstructed_activity) > 0 and float(np.max(reconstructed_activity)) > EPS:
+    if reconstructed_mask_override is not None:
+        reconstructed_mask = np.asarray(reconstructed_mask_override, dtype=bool)
+        if reconstructed_mask.shape != reconstructed_activity.shape:
+            raise ValueError("reconstructed_mask_override must match reconstructed_activity.")
+    else:
+        reconstructed_mask = np.zeros_like(reconstructed_activity, dtype=bool)
+    if (
+        reconstructed_mask_override is None
+        and len(reconstructed_activity) > 0
+        and float(np.max(reconstructed_activity)) > EPS
+    ):
         reconstructed_mask = (
             reconstructed_activity
             >= threshold_fraction * float(np.max(reconstructed_activity))
@@ -497,17 +525,31 @@ def plot_thresholded_activity_panel(
 
     if np.any(reconstructed_mask):
         reconstructed_positions = candidate_positions[reconstructed_mask]
-        ax.scatter(
+        reconstructed_values = reconstructed_activity[reconstructed_mask]
+        normalized_activity = np.clip(
+            reconstructed_values / max(float(np.max(reconstructed_values)), EPS),
+            0.0,
+            1.0,
+        )
+        scatter_kwargs = {}
+        if reconstructed_color_limits is not None:
+            scatter_kwargs["vmin"] = float(reconstructed_color_limits[0])
+            scatter_kwargs["vmax"] = float(reconstructed_color_limits[1])
+        scatter = ax.scatter(
             reconstructed_positions[:, 0],
             reconstructed_positions[:, 1],
             reconstructed_positions[:, 2],
-            color="tab:red",
-            s=34,
-            marker="^",
-            alpha=0.55,
+            c=np.log1p(reconstructed_values),
+            s=12.0 + 52.0 * normalized_activity,
+            cmap="inferno",
+            marker="o",
+            alpha=0.72,
             depthshade=False,
             label="reconstructed active voxels",
+            **scatter_kwargs,
         )
+        colorbar = ax.figure.colorbar(scatter, ax=ax, shrink=0.72)
+        colorbar.set_label("log(1 + reconstructed activity)")
         points_for_scale.append(reconstructed_positions)
 
     if axis_limits is None:
@@ -520,6 +562,87 @@ def plot_thresholded_activity_panel(
     ax.set_ylabel("y world [cm]")
     ax.set_zlabel("z world [cm]")
     ax.legend(loc="upper right")
+
+
+def visualize_component_filtered_thresholded_activity(
+    dataset,
+    candidate_positions,
+    true_activity,
+    reconstructed_activity,
+    candidate_flat_indices,
+    grid_shape,
+    threshold_fraction,
+    min_component_voxels,
+    save_path=None,
+    show=False,
+    axis_limits=None,
+):
+    """Show thresholded reconstructed voxels only from components passing min_component_voxels."""
+    import matplotlib.pyplot as plt
+    from metrics import find_activity_components
+
+    reconstructed_activity = np.maximum(np.asarray(reconstructed_activity, dtype=float), 0.0)
+    accepted_mask = np.zeros_like(reconstructed_activity, dtype=bool)
+    components = find_activity_components(
+        activity=reconstructed_activity,
+        candidate_positions=candidate_positions,
+        candidate_flat_indices=candidate_flat_indices,
+        grid_shape=grid_shape,
+        threshold_fraction=threshold_fraction,
+        min_component_voxels=min_component_voxels,
+    )
+    for component in components:
+        accepted_mask[np.asarray(component["indices"], dtype=np.int64)] = True
+
+    fig = plt.figure(figsize=(8, 7))
+    ax = fig.add_subplot(111, projection="3d")
+    plot_thresholded_activity_panel(
+        ax=ax,
+        dataset=dataset,
+        candidate_positions=candidate_positions,
+        true_activity=true_activity,
+        reconstructed_activity=reconstructed_activity,
+        threshold_fraction=threshold_fraction,
+        axis_limits=axis_limits,
+        title=(
+            "Thresholded voxels in accepted components\n"
+            f"min component voxels {int(min_component_voxels)}"
+        ),
+        reconstructed_mask_override=accepted_mask,
+    )
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def plot_component_filtered_thresholded_activity_panel(
+    ax,
+    dataset,
+    candidate_positions,
+    true_activity,
+    reconstructed_activity,
+    component_matching,
+    axis_limits=None,
+    title="Thresholded voxels in accepted components",
+):
+    """Draw thresholded reconstructed voxels only from accepted reconstructed components."""
+    reconstructed_activity = np.maximum(np.asarray(reconstructed_activity, dtype=float), 0.0)
+    accepted_mask = np.zeros_like(reconstructed_activity, dtype=bool)
+    for component in component_matching.get("reconstructed_components", []):
+        accepted_mask[np.asarray(component["indices"], dtype=np.int64)] = True
+
+    plot_thresholded_activity_panel(
+        ax=ax,
+        dataset=dataset,
+        candidate_positions=candidate_positions,
+        true_activity=true_activity,
+        reconstructed_activity=reconstructed_activity,
+        threshold_fraction=component_matching["threshold_fraction"],
+        axis_limits=axis_limits,
+        title=(
+            f"{title}\n"
+            f"min component voxels {int(component_matching['min_component_voxels'])}"
+        ),
+        reconstructed_mask_override=accepted_mask,
+    )
 
 
 def render_thresholded_activity_history_frames(
@@ -539,6 +662,25 @@ def render_thresholded_activity_history_frames(
     frames_dir.mkdir(parents=True, exist_ok=True)
     frame_paths = []
     num_frames = len(activity_history)
+    positive_history_values = []
+    for activity_snapshot in activity_history:
+        activity_snapshot = np.maximum(np.asarray(activity_snapshot, dtype=float), 0.0)
+        if len(activity_snapshot) == 0 or float(np.max(activity_snapshot)) <= EPS:
+            continue
+        mask = activity_snapshot >= threshold_fraction * float(np.max(activity_snapshot))
+        if np.any(mask):
+            positive_history_values.append(np.log1p(activity_snapshot[mask]))
+    reconstructed_color_limits = None
+    if positive_history_values:
+        all_values = np.concatenate(positive_history_values)
+        color_min = float(np.min(all_values))
+        color_max = float(np.max(all_values))
+        if color_max <= color_min:
+            color_max = color_min + 1.0
+        reconstructed_color_limits = (
+            color_min,
+            color_max,
+        )
 
     for frame_index, (activity_snapshot, history_item) in enumerate(
         zip(activity_history, history),
@@ -556,6 +698,7 @@ def render_thresholded_activity_history_frames(
             threshold_fraction=threshold_fraction,
             axis_limits=axis_limits,
             title=f"Voxels above blob threshold\nframe {frame_index}/{num_frames} | iteration {iteration}",
+            reconstructed_color_limits=reconstructed_color_limits,
         )
         frame_path = frames_dir / f"thresholded_iteration_{iteration:06d}.png"
         finalize_figure(fig, save_path=frame_path, show=False)
