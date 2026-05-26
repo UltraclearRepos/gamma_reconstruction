@@ -57,6 +57,7 @@ ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS = [
 # smoothness: beta range: 0.01 - 1.0: Penalizes differences from the six-neighbor local mean; smooths noisy voxel spikes.
 # huber: delta range: 0.1 - 5.0: Smooths small neighbor differences while preserving sharper blob edges; delta is the activity-difference scale where the penalty changes from quadratic-like to edge-preserving.
 # rdp: gamma range: 0.1 - 3.0: Relative Difference Penalty; smooths weak/noisy regions while being gentler near strong activity contrast; gamma controls edge preservation in the relative denominator, with larger values preserving stronger contrasts.
+# tv: beta range: 0.001 - 0.03, epsilon range: 1e-3 - 1e-2: Smoothed total variation; encourages compact, piecewise-smooth blobs with sharper boundaries than Gaussian sieve.
 # l1: beta range: 0.001 - 0.1: Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
 
 RECONSTRUCTION_PRIOR_VARIANTS = [
@@ -78,6 +79,10 @@ RECONSTRUCTION_PRIOR_VARIANTS = [
     [{"type": "huber", "beta": 0.01, "delta": 0.3}],
     [{"type": "huber", "beta": 0.03, "delta": 0.3}],
 
+    [{"type": "tv", "beta": 0.003, "epsilon": 0.001}],
+    [{"type": "tv", "beta": 0.01, "epsilon": 0.001}],
+    [{"type": "tv", "beta": 0.03, "epsilon": 0.001}],
+
     [
         {"type": "l1", "beta": 0.003},
         {"type": "rdp", "beta": 0.03, "gamma": 2.0},
@@ -89,6 +94,18 @@ RECONSTRUCTION_PRIOR_VARIANTS = [
     [
         {"type": "l1", "beta": 0.003},
         {"type": "huber", "beta": 0.01, "delta": 0.3},
+    ],
+    [
+        {"type": "l1", "beta": 0.03},
+        {"type": "tv", "beta": 0.003, "epsilon": 0.001},
+    ],
+    [
+        {"type": "l1", "beta": 0.1},
+        {"type": "tv", "beta": 0.003, "epsilon": 0.001},
+    ],
+    [
+        {"type": "l1", "beta": 0.1},
+        {"type": "tv", "beta": 0.01, "epsilon": 0.001},
     ],
     [
         {"type": "rdp", "beta": 0.03, "gamma": 2.0},

@@ -49,34 +49,34 @@ def make_default_config():
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
         "NUM_MEASUREMENTS": 100,  # Number of detector positions / generated measurements.
-        # "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
-        #     {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
-        #     {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
-        #     # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
-        # ],
+        "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
+            {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
+            {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
+            # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
+        ],
         # "TRUE_SOURCE_SPECS": [
         #     # Lewy płat: głębiej, rozmyty
         #     {"position": (-2.5, 1.5, -1.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
         #     # Prawy płat: odrobinę wyżej, nieco mniejszy
         #     {"position": (2.5, 1.0, 1.0), "strength_per_second": 4500.0, "spread_cm": 1.0},
         #     # "Gorący guzek": bardzo blisko skóry (płytko), mały, wysoka aktywność
-        #     {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.4},
+        #     {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.5},
         # ],
-        "TRUE_SOURCE_SPECS": [
-            # Główne źródło ukryte głęboko w tkance
-            {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
-            # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
-            {"position": (0.0, 6.0, 0.0), "strength_per_second": 2000.0, "spread_cm": 0.5},
-            # Punkt referencyjny z boku dla oceny ogólnej geometrii
-            {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
-        ],
+        # "TRUE_SOURCE_SPECS": [
+        #     # Główne źródło ukryte głęboko w tkance
+        #     {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
+        #     # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
+        #     {"position": (0.0, 6.0, 0.0), "strength_per_second": 2000.0, "spread_cm": 0.5},
+        #     # Punkt referencyjny z boku dla oceny ogólnej geometrii
+        #     {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
+        # ],
         # "TRUE_SOURCE_SPECS": [
         #     # Masywne, rozmyte źródło centralne
         #     {"position": (-1.0, 0.0, 0.0), "strength_per_second": 20000.0, "spread_cm": 2.0},
         #     # Bardzo małe, słabe, odseparowane geometrycznie źródło
-        #     {"position": (4.0, 4.0, 3.0), "strength_per_second": 1500.0, "spread_cm": 0.2},
+        #     {"position": (4.0, 4.0, 3.0), "strength_per_second": 3500.0, "spread_cm": 0.5},
         #     # Średnie źródło na "dolnej" krawędzi trajektorii Z
-        #     {"position": (2.0, -3.0, -4.0), "strength_per_second": 5000.0, "spread_cm": 0.6},
+        #     {"position": (2.0, -3.0, -4.0), "strength_per_second": 5000.0, "spread_cm": 0.7},
         # ],
         "NUM_CHANNELS": 16,  # Number of detector channels.
         "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
@@ -135,13 +135,14 @@ def make_default_config():
         "ANGULAR_JITTER_DEG": 10.0,  # Random orientation noise per measurement; simulates imperfect manual sensor motion.
 
         # Reconstruction algorithm.
-        "NUM_ITERATIONS": 10,  # ML-EM iteration count.
-        "HISTORY_INTERVAL": 1,  # How often ML-EM stores history snapshots.
+        "NUM_ITERATIONS": 1000,  # ML-EM iteration count.
+        "HISTORY_INTERVAL": 100,  # How often ML-EM stores history snapshots.
         "RECONSTRUCTION_PRIORS": [
             # {"type": "smoothness", "beta": 0.1},  # Penalizes differences from the six-neighbor local mean; smooths noisy voxel spikes.
             # {"type": "huber", "beta": 0.1, "delta": 0.3},  # Smooths small neighbor differences while preserving sharper blob edges; delta is the activity-difference scale where the penalty changes from quadratic-like to edge-preserving, try 0.1-5.0 depending on reconstructed activity scale.
             # {"type": "rdp", "beta": 0.001, "gamma": 0.3},  # Relative Difference Penalty; smooths weak/noisy regions while being gentler near strong activity contrast; gamma controls edge preservation in the relative denominator, try 0.1-3.0, with larger values preserving stronger contrasts.
-            # {"type": "l1", "beta": 0.3},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
+            {"type": "tv", "beta": 0.1, "epsilon": 0.001},  # Smoothed total variation; encourages compact blobs with sharper boundaries than Gaussian sieve.
+            {"type": "l1", "beta": 0.01},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
         ],  # Priors shared by MAP-EM and BSREM
         "RECONSTRUCTION_SIEVE_SIGMA_CM": 0.0,  # Optional post-update Gaussian sieve filter; 0 disables it.
         "BSREM_NUM_SUBSETS": 8,  # Ordered subsets per BSREM iteration.
@@ -149,8 +150,8 @@ def make_default_config():
         "BSREM_RELAXATION_DECAY": 0.01,  # Larger values damp later BSREM iterations more strongly.
         "BSREM_RELAXATION_POWER": 1.0,  # Exponent used by the BSREM relaxation schedule.
         # Activity-map metrics.
-        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.5,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
-        "ACTIVITY_COMPONENT_MIN_VOXELS": 2,  # Minimum connected voxels needed to report a blob.
+        "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.1,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
+        "ACTIVITY_COMPONENT_MIN_VOXELS": 3,  # Minimum connected voxels needed to report a blob.
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,  # Print full generated measurement x channel table.

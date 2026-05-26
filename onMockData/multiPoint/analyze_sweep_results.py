@@ -19,7 +19,7 @@ INPUT_CSV = (
     ON_MOCK_DATA_DIR
     / "multiPoint"
     / "visualizations"
-    / "reconstruction_method_prior_sources_sweep.csv"
+    / "reconstruction_method_prior_sources_sweep_v2.csv"
 )
 OUTPUT_DIR = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations" / "sweep_analysis"
 TOP_N = 8
@@ -893,6 +893,11 @@ def make_prior_outputs(df, output_dir, metric, top_n):
     return table
 
 
+def threshold_directory_name(threshold):
+    """Return a stable directory name for one component threshold value."""
+    return f"threshold_{filename_token(f'{float(threshold):g}')}"
+
+
 def write_report(df, all_tables, output_dir):
     """Write a compact markdown report pointing to the generated artifacts."""
     report_path = output_dir / "summary.md"
@@ -931,24 +936,26 @@ def write_report(df, all_tables, output_dir):
             "",
             "Every ranking is generated separately for pearson and centroid_mean.",
             "Use files ending in `_pearson` for shape correlation and `_centroid_mean` for localization error.",
+            "Threshold-specific plots are written into `threshold_*` subdirectories.",
             "Elapsed-time files use `elapsed_seconds` averaged over source cases for each method/prior/budget.",
         ]
     )
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def make_metric_outputs(df, metric):
+def make_metric_outputs(df, metric, output_dir):
     """Write all plots and tables for one metric."""
     key = metric["key"]
-    tables = write_metric_tables(df, OUTPUT_DIR, metric, TOP_N)
-    make_prior_outputs(df, OUTPUT_DIR, metric, TOP_N)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    tables = write_metric_tables(df, output_dir, metric, TOP_N)
+    make_prior_outputs(df, output_dir, metric, TOP_N)
     top_configs = select_top_configurations(df, metric, TOP_N)
     all_configs = select_all_configurations(df, metric)
     plot_metric_vs_axis_top_configs(
         df,
         top_configs,
         "num_measurements",
-        OUTPUT_DIR / f"{key}_vs_measurements_top_configs.png",
+        output_dir / f"{key}_vs_measurements_top_configs.png",
         f"{metric['label']} vs number of measurements for top source/method/prior configs",
         metric,
     )
@@ -956,7 +963,7 @@ def make_metric_outputs(df, metric):
         df,
         top_configs,
         "num_iterations",
-        OUTPUT_DIR / f"{key}_vs_iterations_top_configs.png",
+        output_dir / f"{key}_vs_iterations_top_configs.png",
         f"{metric['label']} vs iterations for top source/method/prior configs",
         metric,
     )
@@ -964,7 +971,7 @@ def make_metric_outputs(df, metric):
         df,
         all_configs,
         "num_measurements",
-        OUTPUT_DIR / f"{key}_vs_measurements_all_configs.png",
+        output_dir / f"{key}_vs_measurements_all_configs.png",
         f"{metric['label']} vs number of measurements for all source/method/prior configs",
         metric,
     )
@@ -972,11 +979,21 @@ def make_metric_outputs(df, metric):
         df,
         all_configs,
         "num_iterations",
-        OUTPUT_DIR / f"{key}_vs_iterations_all_configs.png",
+        output_dir / f"{key}_vs_iterations_all_configs.png",
         f"{metric['label']} vs iterations for all source/method/prior configs",
         metric,
     )
     return tables
+
+
+def make_threshold_metric_outputs(df, metric, output_dir):
+    """Write the same metric outputs separately for every component threshold."""
+    threshold_column = "activity_component_threshold_fraction"
+    thresholds = sorted(df[threshold_column].dropna().unique())
+    for threshold in thresholds:
+        threshold_df = df[df[threshold_column].eq(threshold)].copy()
+        threshold_dir = output_dir / threshold_directory_name(threshold)
+        make_metric_outputs(threshold_df, metric, threshold_dir)
 
 
 def main():
@@ -985,7 +1002,8 @@ def main():
 
     all_tables = {}
     for metric in METRICS:
-        all_tables[metric["key"]] = make_metric_outputs(df, metric)
+        all_tables[metric["key"]] = make_metric_outputs(df, metric, OUTPUT_DIR)
+        make_threshold_metric_outputs(df, metric, OUTPUT_DIR)
     make_elapsed_time_outputs(df, OUTPUT_DIR)
     write_report(df, all_tables, OUTPUT_DIR)
 

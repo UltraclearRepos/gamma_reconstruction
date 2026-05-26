@@ -371,6 +371,18 @@ def rdp_pair_gradient(left, right, gamma):
     return left_gradient, right_gradient
 
 
+def tv_pair_gradient(left, right, epsilon):
+    """Return smoothed total-variation gradients for one neighboring voxel pair."""
+    epsilon = float(epsilon)
+    if epsilon <= 0.0:
+        raise ValueError("TV prior epsilon must be > 0.")
+
+    difference = left - right
+    denominator = torch.sqrt(difference * difference + epsilon * epsilon)
+    left_gradient = difference / torch.clamp(denominator, min=EPS)
+    return left_gradient, -left_gradient
+
+
 def pairwise_neighbor_prior_gradient(
     activity,
     candidate_flat_indices,
@@ -447,6 +459,24 @@ def rdp_neighbor_prior_gradient(
     )
 
 
+def tv_neighbor_prior_gradient(
+    activity,
+    candidate_flat_indices,
+    grid_shape,
+    device,
+    epsilon=1e-3,
+):
+    """Return six-neighbor smoothed total-variation prior gradient for candidate voxels."""
+    return pairwise_neighbor_prior_gradient(
+        activity=activity,
+        candidate_flat_indices=candidate_flat_indices,
+        grid_shape=grid_shape,
+        device=device,
+        pair_gradient_fn=tv_pair_gradient,
+        epsilon=epsilon,
+    )
+
+
 def compute_reconstruction_prior_gradient(
     activity,
     candidate_positions,
@@ -495,10 +525,18 @@ def compute_reconstruction_prior_gradient(
                 device=device,
                 gamma=float(prior.get("gamma", 1.0)),
             )
+        elif prior_type in ("tv", "total_variation", "compactness"):
+            gradient = gradient + beta * tv_neighbor_prior_gradient(
+                activity=activity,
+                candidate_flat_indices=candidate_grid["candidate_flat_indices"],
+                grid_shape=candidate_grid["grid_shape"],
+                device=device,
+                epsilon=float(prior.get("epsilon", 1e-3)),
+            )
         else:
             raise ValueError(
                 f"Unknown reconstruction prior type {prior_type!r}. "
-                "Use: smoothness, l1, huber, rdp."
+                "Use: smoothness, l1, huber, rdp, tv."
             )
 
     return gradient
