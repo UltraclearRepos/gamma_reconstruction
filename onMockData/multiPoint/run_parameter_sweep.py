@@ -48,6 +48,7 @@ NUM_MEASUREMENT_VARIANTS = [
 
 
 ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS = [
+    0.1,
     0.3,
     0.5,
     0.7,
@@ -62,54 +63,41 @@ ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS = [
 
 RECONSTRUCTION_PRIOR_VARIANTS = [
     [],
-
-    [{"type": "l1", "beta": 0.003}],
-    [{"type": "l1", "beta": 0.01}],
-    [{"type": "l1", "beta": 0.03}],
-    [{"type": "l1", "beta": 0.1}],
-
-    [{"type": "rdp", "beta": 0.03, "gamma": 1.0}],
-    [{"type": "rdp", "beta": 0.03, "gamma": 2.0}],
-    [{"type": "rdp", "beta": 0.1, "gamma": 1.5}],
-    [{"type": "rdp", "beta": 0.1, "gamma": 2.0}],
-    [{"type": "rdp", "beta": 0.1, "gamma": 3.0}],
-
-    [{"type": "huber", "beta": 0.003, "delta": 0.3}],
-    [{"type": "huber", "beta": 0.01, "delta": 0.1}],
-    [{"type": "huber", "beta": 0.01, "delta": 0.3}],
-    [{"type": "huber", "beta": 0.03, "delta": 0.3}],
-
-    [{"type": "tv", "beta": 0.003, "epsilon": 0.001}],
-    [{"type": "tv", "beta": 0.01, "epsilon": 0.001}],
-    [{"type": "tv", "beta": 0.03, "epsilon": 0.001}],
-
     [
-        {"type": "l1", "beta": 0.003},
-        {"type": "rdp", "beta": 0.03, "gamma": 2.0},
+        {"type": "l1", "beta": 0.01},
+        {"type": "tv", "beta": 0.1, "epsilon": 0.001},
     ],
     [
         {"type": "l1", "beta": 0.01},
-        {"type": "rdp", "beta": 0.03, "gamma": 2.0},
+        {"type": "tv", "beta": 0.01, "epsilon": 0.001},
     ],
     [
-        {"type": "l1", "beta": 0.003},
-        {"type": "huber", "beta": 0.01, "delta": 0.3},
-    ],
-    [
-        {"type": "l1", "beta": 0.03},
-        {"type": "tv", "beta": 0.003, "epsilon": 0.001},
+        {"type": "l1", "beta": 0.01},
+        {"type": "tv", "beta": 0.001, "epsilon": 0.001},
     ],
     [
         {"type": "l1", "beta": 0.1},
-        {"type": "tv", "beta": 0.003, "epsilon": 0.001},
+        {"type": "tv", "beta": 0.1, "epsilon": 0.001},
     ],
     [
         {"type": "l1", "beta": 0.1},
         {"type": "tv", "beta": 0.01, "epsilon": 0.001},
     ],
     [
-        {"type": "rdp", "beta": 0.03, "gamma": 2.0},
-        {"type": "huber", "beta": 0.003, "delta": 0.3},
+        {"type": "l1", "beta": 0.1},
+        {"type": "tv", "beta": 0.001, "epsilon": 0.001},
+    ],
+    [
+        {"type": "l1", "beta": 0.001},
+        {"type": "tv", "beta": 0.1, "epsilon": 0.001},
+    ],
+    [
+        {"type": "l1", "beta": 0.001},
+        {"type": "tv", "beta": 0.01, "epsilon": 0.001},
+    ],
+    [
+        {"type": "l1", "beta": 0.001},
+        {"type": "tv", "beta": 0.001, "epsilon": 0.001},
     ],
 ]
 
@@ -127,7 +115,7 @@ TRUE_SOURCE_CASES = [
         "true_sources": [
             {"position": (-2.5, 1.5, -1.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
             {"position": (2.5, 1.0, 1.0), "strength_per_second": 4500.0, "spread_cm": 1.0},
-            {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.4}
+            {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.5}
         ],
     },
     {
@@ -142,8 +130,8 @@ TRUE_SOURCE_CASES = [
         "name": "3",
         "true_sources": [
             {"position": (-1.0, 0.0, 0.0), "strength_per_second": 20000.0, "spread_cm": 2.0},
-            {"position": (4.0, 4.0, 3.0), "strength_per_second": 1500.0, "spread_cm": 0.2},
-            {"position": (2.0, -3.0, -4.0), "strength_per_second": 5000.0, "spread_cm": 0.6},
+            {"position": (4.0, 4.0, 3.0), "strength_per_second": 3500.0, "spread_cm": 0.5},
+            {"position": (2.0, -3.0, -4.0), "strength_per_second": 5000.0, "spread_cm": 0.7},
         ],
     },
 ]
@@ -156,7 +144,7 @@ FIXED_OVERRIDES = {
 
 
 OUTPUT_DIR = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
-OUTPUT_CSV = OUTPUT_DIR / "reconstruction_method_prior_sources_sweep_v2.csv"
+OUTPUT_CSV = OUTPUT_DIR / "reconstruction_TV_l1_sweep.csv"
 PAUSE_TOGGLE_KEY = "0"
 
 SWEEP_CSV_COLUMNS = [
