@@ -154,14 +154,16 @@ def make_default_config():
         "BSREM_RELAXATION_DECAY": 0.01,  # Larger values damp later online BSREM updates more strongly.
         "BSREM_RELAXATION_POWER": 1.0,  # Exponent used by the BSREM relaxation schedule.
 
-        # Optional second reconstruction pass on voxels selected from the thresholded map.
-        "ENABLE_THRESHOLD_REFINEMENT": False,  # Online demo keeps refinement disabled; it can be added later.
+        # Optional periodic refinement on voxels selected from the thresholded map.
+        "ENABLE_THRESHOLD_REFINEMENT": True,  # Periodically refine thresholded support voxels during online reconstruction.
+        "THRESHOLD_REFINEMENT_INTERVAL_BATCHES": 5,  # Run refinement after every N received measurement batches.
         "THRESHOLD_REFINEMENT_METHOD": "same",
-        "THRESHOLD_REFINEMENT_NUM_ITERATIONS": 100,
+        "THRESHOLD_REFINEMENT_NUM_ITERATIONS": 10,
         "THRESHOLD_REFINEMENT_HISTORY_INTERVAL": 10,
         "THRESHOLD_REFINEMENT_PRIORS": [],
         "THRESHOLD_REFINEMENT_SIEVE_SIGMA_CM": 0.0,
         "THRESHOLD_REFINEMENT_PADDING_CM": 0.75,
+        "THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY": 0.5,  # Multiply voxels outside support by this after each refinement.
 
         # Activity-map metrics.
         "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.1,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
@@ -386,6 +388,20 @@ def run_online_experiment(overrides=None):
         relaxation_initial=config["BSREM_RELAXATION_INITIAL"],
         relaxation_decay=config["BSREM_RELAXATION_DECAY"],
         relaxation_power=config["BSREM_RELAXATION_POWER"],
+        enable_periodic_refinement=config["ENABLE_THRESHOLD_REFINEMENT"],
+        refinement_interval_batches=config["THRESHOLD_REFINEMENT_INTERVAL_BATCHES"],
+        refinement_updates=config["THRESHOLD_REFINEMENT_NUM_ITERATIONS"],
+        refinement_history_interval=config["THRESHOLD_REFINEMENT_HISTORY_INTERVAL"],
+        refinement_threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
+        refinement_min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+        refinement_padding_cm=config["THRESHOLD_REFINEMENT_PADDING_CM"],
+        refinement_outside_support_decay=config["THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY"],
+        refinement_priors=(
+            config["RECONSTRUCTION_PRIORS"]
+            if not config["THRESHOLD_REFINEMENT_PRIORS"]
+            else config["THRESHOLD_REFINEMENT_PRIORS"]
+        ),
+        refinement_sieve_sigma_cm=config["THRESHOLD_REFINEMENT_SIEVE_SIGMA_CM"],
     )
     reconstruction_elapsed_seconds = perf_counter() - reconstruction_start_time
 
@@ -451,6 +467,15 @@ def main():
             f"H={timings['system_matrix_seconds']:.3f}, "
             f"transfer={timings['transfer_seconds']:.3f}, "
             f"updates={timings['online_bsrem_iterations_seconds']:.3f}"
+        )
+    if result.get("online", {}).get("periodic_refinement_enabled"):
+        print(
+            "Periodic refinement:      "
+            f"{result['online'].get('periodic_refinement_count', 0)} runs, "
+            f"every {config['THRESHOLD_REFINEMENT_INTERVAL_BATCHES']} batches, "
+            f"updates/run={config['THRESHOLD_REFINEMENT_NUM_ITERATIONS']}, "
+            f"history every {config['THRESHOLD_REFINEMENT_HISTORY_INTERVAL']}, "
+            f"outside_decay={config['THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY']:.3g}"
         )
 
     print_activity_map_similarity_summary(experiment["activity_map_similarity"])
@@ -636,7 +661,7 @@ def main():
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         min_component_voxels=1,
         frames_dir=thresholded_history_dir,
-        refinement_events=[],
+        refinement_events=result.get("refinement_events", []),
         axis_limits=config["AXIS_LIMITS_3D"],
         panel_mode="thresholded",
     )
@@ -658,7 +683,7 @@ def main():
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
         frames_dir=accepted_components_history_dir,
-        refinement_events=[],
+        refinement_events=result.get("refinement_events", []),
         axis_limits=config["AXIS_LIMITS_3D"],
         panel_mode="accepted_components",
     )

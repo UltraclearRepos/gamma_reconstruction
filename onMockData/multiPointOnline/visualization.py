@@ -1013,7 +1013,13 @@ def render_online_refinement_diagnostic_frames(
         for event in events_by_update.get(online_update, []):
             refinement_index = int(event.get("refinement_index", completed_refinements + 1))
             refinement_history = list(event.get("activity_history", []))
-            for refinement_step, refinement_activity in enumerate(refinement_history, start=1):
+            refinement_history_steps = list(event.get("activity_history_steps", []))
+            total_refinement_updates = int(event.get("refinement_updates", len(refinement_history)))
+            for saved_index, refinement_activity in enumerate(refinement_history):
+                if saved_index < len(refinement_history_steps):
+                    refinement_step = int(refinement_history_steps[saved_index])
+                else:
+                    refinement_step = saved_index + 1
                 save_frame(
                     online_activity=online_activity,
                     right_activity=refinement_activity,
@@ -1021,7 +1027,7 @@ def render_online_refinement_diagnostic_frames(
                     online_update=online_update,
                     right_title=(
                         "Refinement support voxels\n"
-                        f"refinement {refinement_index} step {refinement_step}/{len(refinement_history)}"
+                        f"refinement {refinement_index} step {refinement_step}/{total_refinement_updates}"
                     ),
                     phase_label="refinement running; online panel held fixed",
                     refinements_done=completed_refinements,

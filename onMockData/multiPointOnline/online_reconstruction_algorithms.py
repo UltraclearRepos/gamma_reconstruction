@@ -464,6 +464,155 @@ def make_online_history_item(
     }
 
 
+def make_refinement_support_indices(
+    activity,
+    candidate_positions,
+    threshold_fraction,
+    min_component_voxels,
+    padding_cm,
+    candidate_flat_indices,
+    grid_shape,
+):
+    """Return full candidate indices selected for local refinement."""
+    from metrics import find_activity_components
+
+    activity = np.maximum(np.asarray(activity, dtype=float), 0.0)
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    if len(activity) == 0 or float(np.max(activity)) <= EPS:
+        return np.array([], dtype=np.int64)
+
+    components = find_activity_components(
+        activity=activity,
+        candidate_positions=candidate_positions,
+        candidate_flat_indices=candidate_flat_indices,
+        grid_shape=grid_shape,
+        threshold_fraction=threshold_fraction,
+        min_component_voxels=min_component_voxels,
+    )
+    support_mask = np.zeros(len(activity), dtype=bool)
+    for component in components:
+        support_mask[np.asarray(component["indices"], dtype=np.int64)] = True
+    if not np.any(support_mask):
+        return np.array([], dtype=np.int64)
+
+    padding_cm = float(padding_cm)
+    if padding_cm > 0.0:
+        active_positions = candidate_positions[support_mask]
+        padded_mask = np.zeros(len(candidate_positions), dtype=bool)
+        padding_squared = padding_cm * padding_cm
+        chunk_size = 2048
+        for start in range(0, len(candidate_positions), chunk_size):
+            stop = min(start + chunk_size, len(candidate_positions))
+            squared_distances = np.sum(
+                (
+                    candidate_positions[start:stop, np.newaxis, :]
+                    - active_positions[np.newaxis, :, :]
+                )
+                ** 2,
+                axis=2,
+            )
+            padded_mask[start:stop] = np.any(squared_distances <= padding_squared, axis=1)
+        support_mask = padded_mask
+
+    return np.flatnonzero(support_mask).astype(np.int64)
+
+
+def run_periodic_refinement(
+    activity,
+    known_system_matrix,
+    known_counts_flat,
+    known_backgrounds_flat,
+    candidate_grid,
+    support_indices,
+    reconstruction_priors,
+    refinement_updates,
+    refinement_history_interval,
+    num_channels,
+    num_subsets,
+    relaxation,
+    max_relative_update,
+    sieve_sigma_cm,
+    device,
+):
+    """Run local BSREM updates only on support voxels and return activity snapshots."""
+    support_indices = np.asarray(support_indices, dtype=np.int64)
+    support_index_tensor = torch.as_tensor(support_indices, dtype=torch.long, device=device)
+    support_activity = torch.clamp(activity[support_index_tensor].clone(), min=EPS)
+    support_matrix = known_system_matrix[:, support_index_tensor]
+    support_sensitivity = torch.sum(support_matrix, dim=0)
+    num_channels = int(num_channels)
+    if num_channels <= 0:
+        raise ValueError("num_channels must be > 0.")
+
+    # known_system_matrix rows are flattened measurement/channel rows.
+    known_measurements = int(known_system_matrix.shape[0] // num_channels)
+    subsets = make_measurement_row_subsets(
+        counts_shape=(known_measurements, num_channels),
+        num_subsets=num_subsets,
+        device=device,
+    )
+    support_candidate_grid = {
+        "candidate_positions": candidate_grid["candidate_positions"][support_indices],
+        "candidate_flat_indices": candidate_grid["candidate_flat_indices"][support_indices],
+        "grid_shape": candidate_grid["grid_shape"],
+        "voxel_size_cm": candidate_grid["voxel_size_cm"],
+    }
+    support_history = []
+    support_history_steps = []
+
+    refinement_updates = int(refinement_updates)
+    refinement_history_interval = int(refinement_history_interval)
+
+    for refinement_update_index in range(1, refinement_updates + 1):
+        for subset in subsets:
+            row_indices = subset["row_indices"]
+            subset_matrix = support_matrix[row_indices, :]
+            subset_counts = known_counts_flat[row_indices]
+            subset_backgrounds = known_backgrounds_flat[row_indices]
+            predicted_counts = predict_counts_from_activity(
+                backgrounds_flat=subset_backgrounds,
+                system_matrix=subset_matrix,
+                activity=support_activity,
+            )
+            ratio = subset_counts / torch.clamp(predicted_counts, min=EPS)
+            subset_scale = known_measurements / max(int(subset["measurement_count"]), 1)
+            data_gradient = subset_scale * (subset_matrix.T @ (ratio - 1.0))
+            prior_gradient = compute_reconstruction_prior_gradient(
+                activity=support_activity,
+                candidate_grid=support_candidate_grid,
+                reconstruction_priors=reconstruction_priors,
+                device=device,
+            )
+            relative_update = (
+                relaxation
+                * (data_gradient - prior_gradient)
+                / torch.clamp(support_sensitivity, min=EPS)
+            )
+            relative_update = torch.clamp(
+                relative_update,
+                min=-0.95,
+                max=max_relative_update,
+            )
+            support_activity = torch.clamp(support_activity * (1.0 + relative_update), min=EPS)
+            support_activity = apply_sieve_filter(
+                activity=support_activity,
+                candidate_flat_indices=support_candidate_grid["candidate_flat_indices"],
+                grid_shape=support_candidate_grid["grid_shape"],
+                voxel_size_cm=support_candidate_grid["voxel_size_cm"],
+                sieve_sigma_cm=sieve_sigma_cm,
+                device=device,
+            )
+        if (
+            refinement_update_index == 1
+            or refinement_update_index % refinement_history_interval == 0
+            or refinement_update_index == refinement_updates
+        ):
+            support_history.append(tensor_to_numpy(support_activity).copy())
+            support_history_steps.append(int(refinement_update_index))
+
+    return support_activity, support_history, support_history_steps
+
+
 def online_bsrem_reconstruction(
     measurement_batches,
     geometry,
@@ -494,6 +643,16 @@ def online_bsrem_reconstruction(
     max_relative_update=2.0,
     candidate_grid_override=None,
     initial_activity=None,
+    enable_periodic_refinement=False,
+    refinement_interval_batches=5,
+    refinement_updates=10,
+    refinement_history_interval=1,
+    refinement_threshold_fraction=0.1,
+    refinement_min_component_voxels=3,
+    refinement_padding_cm=0.75,
+    refinement_outside_support_decay=0.5,
+    refinement_priors=None,
+    refinement_sieve_sigma_cm=0.0,
 ):
     """
     Reconstruct a voxel activity map with online BSREM.
@@ -505,8 +664,9 @@ def online_bsrem_reconstruction(
         (counts, rotations, translations)
 
     After each incoming batch, the algorithm performs updates_per_batch BSREM
-    passes over all measurements received so far. Refinement is intentionally
-    not included here.
+    passes over all measurements received so far. Optional periodic refinement
+    locally updates thresholded support voxels and decays activity outside that
+    support instead of zeroing it.
     """
     updates_per_batch = int(updates_per_batch)
     history_interval = int(history_interval)
@@ -527,6 +687,28 @@ def online_bsrem_reconstruction(
         raise ValueError("BSREM relaxation_power must be >= 0.")
     if max_relative_update <= 0.0:
         raise ValueError("BSREM max_relative_update must be > 0.")
+    refinement_interval_batches = int(refinement_interval_batches)
+    refinement_updates = int(refinement_updates)
+    refinement_history_interval = int(refinement_history_interval)
+    refinement_threshold_fraction = float(refinement_threshold_fraction)
+    refinement_min_component_voxels = int(refinement_min_component_voxels)
+    refinement_padding_cm = float(refinement_padding_cm)
+    refinement_outside_support_decay = float(refinement_outside_support_decay)
+    if enable_periodic_refinement:
+        if refinement_interval_batches <= 0:
+            raise ValueError("refinement_interval_batches must be > 0.")
+        if refinement_updates <= 0:
+            raise ValueError("refinement_updates must be > 0.")
+        if refinement_history_interval <= 0:
+            raise ValueError("refinement_history_interval must be > 0.")
+        if not 0.0 <= refinement_threshold_fraction <= 1.0:
+            raise ValueError("refinement_threshold_fraction must be between 0 and 1.")
+        if refinement_min_component_voxels <= 0:
+            raise ValueError("refinement_min_component_voxels must be > 0.")
+        if refinement_padding_cm < 0.0:
+            raise ValueError("refinement_padding_cm must be >= 0.")
+        if not 0.0 <= refinement_outside_support_decay <= 1.0:
+            raise ValueError("refinement_outside_support_decay must be between 0 and 1.")
 
     candidate_grid = resolve_candidate_grid(
         trajectory_center=trajectory_center,
@@ -544,7 +726,9 @@ def online_bsrem_reconstruction(
         raise ValueError("assumed_backgrounds must be a 1D array with one value per channel.")
 
     reconstruction_priors = list(reconstruction_priors or [])
+    refinement_priors = list(refinement_priors if refinement_priors is not None else reconstruction_priors)
     sieve_sigma_cm = float(reconstruction_sieve_sigma_cm)
+    refinement_sieve_sigma_cm = float(refinement_sieve_sigma_cm)
 
     known_system_matrices = []
     known_counts = []
@@ -556,6 +740,8 @@ def online_bsrem_reconstruction(
     activity = None
     history = []
     activity_history = []
+    refinement_events = []
+    refinement_count = 0
     system_matrix_elapsed_seconds = 0.0
     transfer_elapsed_seconds = 0.0
     iteration_start_time = perf_counter()
@@ -699,6 +885,77 @@ def online_bsrem_reconstruction(
                     activity_history.append(tensor_to_numpy(activity).copy())
                     last_history_update = online_update_index
 
+            if enable_periodic_refinement and batch_count % refinement_interval_batches == 0:
+                full_activity_before_refinement = tensor_to_numpy(activity)
+                support_indices = make_refinement_support_indices(
+                    activity=full_activity_before_refinement,
+                    candidate_positions=candidate_positions,
+                    threshold_fraction=refinement_threshold_fraction,
+                    min_component_voxels=refinement_min_component_voxels,
+                    padding_cm=refinement_padding_cm,
+                    candidate_flat_indices=candidate_grid["candidate_flat_indices"],
+                    grid_shape=candidate_grid["grid_shape"],
+                )
+                if len(support_indices) > 0:
+                    refinement_count += 1
+                    refinement_relaxation = bsrem_relaxation_value(
+                        update_index=online_update_index,
+                        relaxation_initial=relaxation_initial,
+                        relaxation_decay=relaxation_decay,
+                        relaxation_power=relaxation_power,
+                    )
+                    refined_support_activity, refinement_activity_history, refinement_activity_history_steps = run_periodic_refinement(
+                        activity=activity,
+                        known_system_matrix=known_system_matrix,
+                        known_counts_flat=known_counts_flat,
+                        known_backgrounds_flat=known_backgrounds_flat,
+                        candidate_grid=candidate_grid,
+                        support_indices=support_indices,
+                        reconstruction_priors=refinement_priors,
+                        refinement_updates=refinement_updates,
+                        refinement_history_interval=refinement_history_interval,
+                        num_channels=num_channels,
+                        num_subsets=num_subsets,
+                        relaxation=refinement_relaxation,
+                        max_relative_update=max_relative_update,
+                        sieve_sigma_cm=refinement_sieve_sigma_cm,
+                        device=device,
+                    )
+                    support_index_tensor = torch.as_tensor(support_indices, dtype=torch.long, device=device)
+                    support_mask = torch.zeros_like(activity, dtype=torch.bool)
+                    support_mask[support_index_tensor] = True
+                    activity = torch.where(
+                        support_mask,
+                        activity,
+                        torch.clamp(activity * refinement_outside_support_decay, min=EPS),
+                    )
+                    activity[support_index_tensor] = torch.clamp(refined_support_activity, min=EPS)
+                    refinement_events.append(
+                        {
+                            "after_online_update": int(online_update_index),
+                            "batch_index": int(batch_count),
+                            "refinement_index": int(refinement_count),
+                            "support_indices": support_indices.copy(),
+                            "support_candidate_positions": candidate_positions[support_indices].copy(),
+                            "support_activity": tensor_to_numpy(refined_support_activity).copy(),
+                            "activity_history": [
+                                np.asarray(snapshot, dtype=float).copy()
+                                for snapshot in refinement_activity_history
+                            ],
+                            "activity_history_steps": [
+                                int(refinement_step)
+                                for refinement_step in refinement_activity_history_steps
+                            ],
+                            "refinement_updates": int(refinement_updates),
+                            "refinement_history_interval": int(refinement_history_interval),
+                            "outside_support_decay": float(refinement_outside_support_decay),
+                            "threshold_fraction": float(refinement_threshold_fraction),
+                            "min_component_voxels": int(refinement_min_component_voxels),
+                            "padding_cm": float(refinement_padding_cm),
+                        }
+                    )
+                    last_history_update = -1
+
     if batch_count == 0:
         raise ValueError("measurement_batches must yield at least one batch.")
 
@@ -748,7 +1005,11 @@ def online_bsrem_reconstruction(
             "measurement_batches": int(batch_count),
             "received_measurements": int(received_measurements),
             "updates_per_batch": int(updates_per_batch),
+            "periodic_refinement_enabled": bool(enable_periodic_refinement),
+            "periodic_refinement_count": int(refinement_count),
+            "periodic_refinement_history_interval": int(refinement_history_interval),
         },
+        "refinement_events": refinement_events,
         "timings": {
             "system_matrix_seconds": system_matrix_elapsed_seconds,
             "transfer_seconds": transfer_elapsed_seconds,
