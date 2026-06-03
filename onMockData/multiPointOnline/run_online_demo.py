@@ -29,10 +29,9 @@ from online_reconstruction_algorithms import (
 from simulation import expected_counts_multi_source, generate_synthetic_dataset
 from visualization import (
     create_gif_from_frames,
+    render_online_refinement_diagnostic_frames,
     render_system_matrix_measurement_3d_frames,
-    render_thresholded_activity_history_frames,
     visualize_activity_map_comparison,
-    visualize_component_filtered_thresholded_activity,
     visualize_detector_response_curves,
     visualize_expected_counts_breakdown,
     visualize_forward_response_components,
@@ -120,7 +119,7 @@ def make_default_config():
         # Reconstruction volume.
         "SEARCH_RADIUS": 10.0,  # Reconstruction cylinder radius around TRAJECTORY_CENTER [cm].
         "CYLINDER_HEIGHT": 12.0,  # Reconstruction cylinder height along world Z [cm].
-        "VOXEL_SIZE_CM": 0.75,  # Reconstruction voxel spacing [cm]; smaller = denser 3D activity grid.
+        "VOXEL_SIZE_CM": 0.5,  # Reconstruction voxel spacing [cm]; smaller = denser 3D activity grid.
 
         # Mock detector trajectory.
         "TRAJECTORY_MODE": "around_center_grid",  # "grid", "line", "around_center", or "around_center_grid".
@@ -625,43 +624,48 @@ def main():
         show=False,
     )
 
-    clear_existing_frames(thresholded_history_dir, "thresholded_iteration_*.png")
-    render_thresholded_activity_history_frames(
+    clear_existing_frames(thresholded_history_dir, "online_refinement_diagnostic_*.png")
+    render_online_refinement_diagnostic_frames(
         dataset=dataset,
         candidate_positions=result["candidate_positions"],
         true_activity=true_voxel_activity,
-        activity_history=result["activity_history"],
-        history=result["history"],
+        candidate_flat_indices=result["candidate_flat_indices"],
+        grid_shape=result["grid_shape"],
+        online_activity_history=result["activity_history"],
+        online_history=result["history"],
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
+        min_component_voxels=1,
         frames_dir=thresholded_history_dir,
+        refinement_events=[],
         axis_limits=config["AXIS_LIMITS_3D"],
+        panel_mode="thresholded",
     )
     create_gif_from_frames(
         frames_dir=thresholded_history_dir,
         output_path=output_dir / "online_thresholded_activity_history_3d.gif",
-        pattern="thresholded_iteration_*.png",
+        pattern="online_refinement_diagnostic_*.png",
         fps=config["GIF_FPS"],
     )
-    clear_existing_frames(accepted_components_history_dir, "accepted_components_update_*.png")
-    for activity_snapshot, history_item in zip(result["activity_history"], result["history"]):
-        update = int(history_item["online_update"])
-        visualize_component_filtered_thresholded_activity(
-            dataset=dataset,
-            candidate_positions=result["candidate_positions"],
-            true_activity=true_voxel_activity,
-            reconstructed_activity=activity_snapshot,
-            candidate_flat_indices=result["candidate_flat_indices"],
-            grid_shape=result["grid_shape"],
-            threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
-            min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
-            save_path=accepted_components_history_dir / f"accepted_components_update_{update:06d}.png",
-            show=False,
-            axis_limits=config["AXIS_LIMITS_3D"],
-        )
+    clear_existing_frames(accepted_components_history_dir, "online_refinement_diagnostic_*.png")
+    render_online_refinement_diagnostic_frames(
+        dataset=dataset,
+        candidate_positions=result["candidate_positions"],
+        true_activity=true_voxel_activity,
+        candidate_flat_indices=result["candidate_flat_indices"],
+        grid_shape=result["grid_shape"],
+        online_activity_history=result["activity_history"],
+        online_history=result["history"],
+        threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
+        min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+        frames_dir=accepted_components_history_dir,
+        refinement_events=[],
+        axis_limits=config["AXIS_LIMITS_3D"],
+        panel_mode="accepted_components",
+    )
     create_gif_from_frames(
         frames_dir=accepted_components_history_dir,
         output_path=output_dir / "online_accepted_components_history_3d.gif",
-        pattern="accepted_components_update_*.png",
+        pattern="online_refinement_diagnostic_*.png",
         fps=config["GIF_FPS"],
     )
 

@@ -576,9 +576,38 @@ def visualize_component_filtered_thresholded_activity(
     save_path=None,
     show=False,
     axis_limits=None,
+    frame_label=None,
 ):
     """Show thresholded reconstructed voxels only from components passing min_component_voxels."""
     import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(8, 7))
+    ax = fig.add_subplot(111, projection="3d")
+    plot_component_filtered_thresholded_activity_from_params(
+        ax=ax,
+        dataset=dataset,
+        candidate_positions=candidate_positions,
+        true_activity=true_activity,
+        reconstructed_activity=reconstructed_activity,
+        candidate_flat_indices=candidate_flat_indices,
+        grid_shape=grid_shape,
+        threshold_fraction=threshold_fraction,
+        min_component_voxels=min_component_voxels,
+        axis_limits=axis_limits,
+        frame_label=frame_label,
+    )
+    finalize_figure(fig, save_path=save_path, show=show)
+
+
+def component_filtered_activity_mask(
+    reconstructed_activity,
+    candidate_positions,
+    candidate_flat_indices,
+    grid_shape,
+    threshold_fraction,
+    min_component_voxels,
+):
+    """Return a mask for thresholded reconstructed voxels in accepted components."""
     from metrics import find_activity_components
 
     reconstructed_activity = np.maximum(np.asarray(reconstructed_activity, dtype=float), 0.0)
@@ -593,9 +622,34 @@ def visualize_component_filtered_thresholded_activity(
     )
     for component in components:
         accepted_mask[np.asarray(component["indices"], dtype=np.int64)] = True
+    return accepted_mask
 
-    fig = plt.figure(figsize=(8, 7))
-    ax = fig.add_subplot(111, projection="3d")
+
+def plot_component_filtered_thresholded_activity_from_params(
+    ax,
+    dataset,
+    candidate_positions,
+    true_activity,
+    reconstructed_activity,
+    candidate_flat_indices,
+    grid_shape,
+    threshold_fraction,
+    min_component_voxels,
+    axis_limits=None,
+    title="Thresholded voxels in accepted components",
+    frame_label=None,
+    reconstructed_color_limits=None,
+):
+    """Draw accepted reconstructed components using raw threshold/min-size parameters."""
+    reconstructed_activity = np.maximum(np.asarray(reconstructed_activity, dtype=float), 0.0)
+    accepted_mask = component_filtered_activity_mask(
+        reconstructed_activity=reconstructed_activity,
+        candidate_positions=candidate_positions,
+        candidate_flat_indices=candidate_flat_indices,
+        grid_shape=grid_shape,
+        threshold_fraction=threshold_fraction,
+        min_component_voxels=min_component_voxels,
+    )
     plot_thresholded_activity_panel(
         ax=ax,
         dataset=dataset,
@@ -605,12 +659,13 @@ def visualize_component_filtered_thresholded_activity(
         threshold_fraction=threshold_fraction,
         axis_limits=axis_limits,
         title=(
-            "Thresholded voxels in accepted components\n"
+            f"{title}\n"
             f"min component voxels {int(min_component_voxels)}"
+            + (f"\n{frame_label}" if frame_label else "")
         ),
+        reconstructed_color_limits=reconstructed_color_limits,
         reconstructed_mask_override=accepted_mask,
     )
-    finalize_figure(fig, save_path=save_path, show=show)
 
 
 def plot_component_filtered_thresholded_activity_panel(
@@ -643,6 +698,339 @@ def plot_component_filtered_thresholded_activity_panel(
         ),
         reconstructed_mask_override=accepted_mask,
     )
+
+
+def refinement_events_by_online_update(refinement_events):
+    """Group optional refinement diagnostic events by the online update after which they happen."""
+    events_by_update = {}
+    for event in refinement_events or []:
+        if "after_online_update" in event:
+            update = int(event["after_online_update"])
+        elif "online_update" in event:
+            update = int(event["online_update"])
+        else:
+            raise KeyError("refinement event must include after_online_update or online_update.")
+        events_by_update.setdefault(update, []).append(dict(event))
+    return events_by_update
+
+
+def refinement_support_positions_and_activity(event, candidate_positions, refinement_activity=None):
+    """Return support positions and optional support activity from a refinement diagnostic event."""
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    support_indices = None
+    if "support_candidate_positions" in event:
+        support_positions = np.asarray(event["support_candidate_positions"], dtype=float)
+    elif "support_indices" in event:
+        support_indices = np.asarray(event["support_indices"], dtype=np.int64)
+        support_positions = candidate_positions[support_indices]
+    elif "source_candidate_indices" in event:
+        support_indices = np.asarray(event["source_candidate_indices"], dtype=np.int64)
+        support_positions = candidate_positions[support_indices]
+    elif "support_mask" in event:
+        support_mask = np.asarray(event["support_mask"], dtype=bool)
+        if support_mask.shape != (len(candidate_positions),):
+            raise ValueError("refinement event support_mask must match candidate_positions.")
+        support_indices = np.flatnonzero(support_mask).astype(np.int64)
+        support_positions = candidate_positions[support_indices]
+    else:
+        support_positions = np.empty((0, 3), dtype=float)
+
+    support_activity = None
+    if refinement_activity is not None:
+        refinement_activity = np.asarray(refinement_activity, dtype=float)
+        if refinement_activity.shape == (len(support_positions),):
+            support_activity = refinement_activity
+        elif support_indices is not None and refinement_activity.shape == (len(candidate_positions),):
+            support_activity = refinement_activity[support_indices]
+        elif "support_activity" in event:
+            support_activity = np.asarray(event["support_activity"], dtype=float)
+    elif "support_activity" in event:
+        support_activity = np.asarray(event["support_activity"], dtype=float)
+
+    if support_activity is not None and support_activity.shape != (len(support_positions),):
+        raise ValueError("refinement support activity must match support voxel count.")
+    return support_positions, support_activity
+
+
+def plot_refinement_support_panel(
+    ax,
+    dataset,
+    candidate_positions,
+    true_activity,
+    support_positions,
+    support_activity=None,
+    axis_limits=None,
+    title="Refinement support voxels",
+    frame_label=None,
+):
+    """Draw the support voxels used by refinement without thresholding them again."""
+    translations = np.asarray(dataset["translations"], dtype=float)
+    true_source_positions = np.array([source["position"] for source in dataset["true_sources"]])
+    candidate_positions = np.asarray(candidate_positions, dtype=float)
+    true_activity = np.maximum(np.asarray(true_activity, dtype=float), 0.0)
+    support_positions = np.asarray(support_positions, dtype=float)
+    points_for_scale = [translations, true_source_positions]
+
+    ax.plot(
+        translations[:, 0],
+        translations[:, 1],
+        translations[:, 2],
+        color="tab:blue",
+        linewidth=1.8,
+        alpha=0.85,
+        label="detector trajectory",
+    )
+
+    true_mask = true_activity > EPS
+    if np.any(true_mask):
+        true_positions = candidate_positions[true_mask]
+        ax.scatter(
+            true_positions[:, 0],
+            true_positions[:, 1],
+            true_positions[:, 2],
+            color="tab:green",
+            s=34,
+            marker="o",
+            alpha=0.55,
+            depthshade=False,
+            label="true source voxels",
+        )
+        points_for_scale.append(true_positions)
+
+    if len(support_positions) > 0:
+        if support_activity is None:
+            ax.scatter(
+                support_positions[:, 0],
+                support_positions[:, 1],
+                support_positions[:, 2],
+                color="tab:orange",
+                s=28,
+                marker="o",
+                alpha=0.76,
+                depthshade=False,
+                label="refinement support voxels",
+            )
+        else:
+            support_activity = np.maximum(np.asarray(support_activity, dtype=float), 0.0)
+            normalized_activity = np.clip(
+                support_activity / max(float(np.max(support_activity)), EPS),
+                0.0,
+                1.0,
+            )
+            scatter = ax.scatter(
+                support_positions[:, 0],
+                support_positions[:, 1],
+                support_positions[:, 2],
+                c=np.log1p(support_activity),
+                s=14.0 + 50.0 * normalized_activity,
+                cmap="inferno",
+                marker="o",
+                alpha=0.74,
+                depthshade=False,
+                label="refinement support voxels",
+            )
+            colorbar = ax.figure.colorbar(scatter, ax=ax, shrink=0.72)
+            colorbar.set_label("log(1 + refinement activity)")
+        points_for_scale.append(support_positions)
+    else:
+        ax.text2D(
+            0.5,
+            0.5,
+            "no refinement support yet",
+            transform=ax.transAxes,
+            ha="center",
+            va="center",
+        )
+
+    if axis_limits is None:
+        set_equal_3d_axes(ax, np.vstack(points_for_scale))
+    else:
+        set_3d_axis_limits(ax, axis_limits)
+
+    ax.set_title(title + (f"\n{frame_label}" if frame_label else ""))
+    ax.set_xlabel("x world [cm]")
+    ax.set_ylabel("y world [cm]")
+    ax.set_zlabel("z world [cm]")
+    ax.legend(loc="upper right")
+
+
+def render_online_refinement_diagnostic_frames(
+    dataset,
+    candidate_positions,
+    true_activity,
+    candidate_flat_indices,
+    grid_shape,
+    online_activity_history,
+    online_history,
+    threshold_fraction,
+    min_component_voxels,
+    frames_dir,
+    refinement_events=None,
+    axis_limits=None,
+    panel_mode="accepted_components",
+):
+    """
+    Render two-panel online/refinement diagnostic frames.
+
+    The left panel shows the online reconstruction state. During refinement
+    frames it stays fixed at the online state that triggered refinement. The
+    right panel shows refinement snapshots when refinement_events are supplied;
+    otherwise it stays as an idle/no-refinement panel.
+
+    Expected refinement event shape for future refinement code:
+        {
+            "after_online_update": 25,
+            "refinement_index": 2,
+            "activity_history": [activity_after_step_1, activity_after_step_2, ...],
+        }
+    """
+    import matplotlib.pyplot as plt
+
+    panel_mode = str(panel_mode).strip().lower()
+    if panel_mode not in ("accepted_components", "thresholded"):
+        raise ValueError("panel_mode must be 'accepted_components' or 'thresholded'.")
+
+    frames_dir = Path(frames_dir)
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    events_by_update = refinement_events_by_online_update(refinement_events)
+    frame_paths = []
+    latest_refinement_activity = None
+    latest_refinement_event = None
+    completed_refinements = 0
+    frame_index = 0
+
+    online_pairs = list(zip(online_activity_history, online_history))
+    total_event_frames = sum(
+        len(event.get("activity_history", []))
+        for events in events_by_update.values()
+        for event in events
+    )
+    total_frames = len(online_pairs) + total_event_frames
+
+    def save_frame(
+        online_activity,
+        right_activity,
+        right_event,
+        online_update,
+        right_title,
+        phase_label,
+        refinements_done,
+    ):
+        nonlocal frame_index
+        frame_index += 1
+        fig = plt.figure(figsize=(16, 7))
+        left_ax = fig.add_subplot(121, projection="3d")
+        right_ax = fig.add_subplot(122, projection="3d")
+        frame_label = (
+            f"{phase_label}\n"
+            f"frame {frame_index}/{total_frames} | online update {online_update}\n"
+            f"refinements completed {refinements_done}"
+        )
+        if panel_mode == "thresholded":
+            plot_thresholded_activity_panel(
+                ax=left_ax,
+                dataset=dataset,
+                candidate_positions=candidate_positions,
+                true_activity=true_activity,
+                reconstructed_activity=online_activity,
+                threshold_fraction=threshold_fraction,
+                axis_limits=axis_limits,
+                title=f"Online reconstruction thresholded voxels\n{frame_label}",
+            )
+            support_positions, support_activity = refinement_support_positions_and_activity(
+                event=right_event or {},
+                candidate_positions=candidate_positions,
+                refinement_activity=right_activity,
+            )
+            plot_refinement_support_panel(
+                ax=right_ax,
+                dataset=dataset,
+                candidate_positions=candidate_positions,
+                true_activity=true_activity,
+                support_positions=support_positions,
+                support_activity=support_activity,
+                axis_limits=axis_limits,
+                title=right_title,
+                frame_label=frame_label,
+            )
+        else:
+            plot_component_filtered_thresholded_activity_from_params(
+                ax=left_ax,
+                dataset=dataset,
+                candidate_positions=candidate_positions,
+                true_activity=true_activity,
+                reconstructed_activity=online_activity,
+                candidate_flat_indices=candidate_flat_indices,
+                grid_shape=grid_shape,
+                threshold_fraction=threshold_fraction,
+                min_component_voxels=min_component_voxels,
+                axis_limits=axis_limits,
+                title="Online reconstruction accepted components",
+                frame_label=frame_label,
+            )
+            support_positions, support_activity = refinement_support_positions_and_activity(
+                event=right_event or {},
+                candidate_positions=candidate_positions,
+                refinement_activity=right_activity,
+            )
+            plot_refinement_support_panel(
+                ax=right_ax,
+                dataset=dataset,
+                candidate_positions=candidate_positions,
+                true_activity=true_activity,
+                support_positions=support_positions,
+                support_activity=support_activity,
+                axis_limits=axis_limits,
+                title=right_title,
+                frame_label=frame_label,
+            )
+        fig.suptitle("Online reconstruction with periodic refinement diagnostic")
+        frame_path = frames_dir / f"online_refinement_diagnostic_{frame_index:06d}.png"
+        finalize_figure(fig, save_path=frame_path, show=False)
+        frame_paths.append(frame_path)
+
+    for online_activity, history_item in online_pairs:
+        online_update = int(history_item.get("online_update", history_item.get("iteration", 0)))
+        if latest_refinement_activity is None:
+            right_activity = np.zeros_like(np.asarray(online_activity, dtype=float))
+            right_event = None
+            right_title = "Refinement panel idle"
+        else:
+            right_activity = latest_refinement_activity
+            right_event = latest_refinement_event
+            right_title = "Latest refinement support voxels"
+
+        save_frame(
+            online_activity=online_activity,
+            right_activity=right_activity,
+            right_event=right_event,
+            online_update=online_update,
+            right_title=right_title,
+            phase_label="online update",
+            refinements_done=completed_refinements,
+        )
+
+        for event in events_by_update.get(online_update, []):
+            refinement_index = int(event.get("refinement_index", completed_refinements + 1))
+            refinement_history = list(event.get("activity_history", []))
+            for refinement_step, refinement_activity in enumerate(refinement_history, start=1):
+                save_frame(
+                    online_activity=online_activity,
+                    right_activity=refinement_activity,
+                    right_event=event,
+                    online_update=online_update,
+                    right_title=(
+                        "Refinement support voxels\n"
+                        f"refinement {refinement_index} step {refinement_step}/{len(refinement_history)}"
+                    ),
+                    phase_label="refinement running; online panel held fixed",
+                    refinements_done=completed_refinements,
+                )
+                latest_refinement_activity = np.asarray(refinement_activity, dtype=float)
+                latest_refinement_event = event
+            completed_refinements = max(completed_refinements, refinement_index)
+
+    return frame_paths
 
 
 def render_thresholded_activity_history_frames(
