@@ -626,13 +626,13 @@ def apply_sieve_filter(
     return filtered
 
 
-def neighborhood_mean_activity(
+def candidate_activity_volume(
     activity,
     candidate_flat_indices,
     grid_shape,
     device,
 ):
-    """Return the six-neighbor mean activity for each candidate voxel."""
+    """Return dense activity and candidate mask volumes for sparse candidate voxels."""
     flat_indices = torch.as_tensor(candidate_flat_indices, dtype=torch.long, device=device)
     num_grid_points = int(np.prod(grid_shape))
     activity_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
@@ -640,143 +640,12 @@ def neighborhood_mean_activity(
     activity_flat[flat_indices] = activity
     mask_flat[flat_indices] = 1.0
 
-    volume = activity_flat.view(1, 1, *grid_shape)
-    mask = mask_flat.view(1, 1, *grid_shape)
-    kernel = torch.zeros((1, 1, 3, 3, 3), dtype=TORCH_DTYPE, device=device)
-    kernel[0, 0, 0, 1, 1] = 1.0
-    kernel[0, 0, 2, 1, 1] = 1.0
-    kernel[0, 0, 1, 0, 1] = 1.0
-    kernel[0, 0, 1, 2, 1] = 1.0
-    kernel[0, 0, 1, 1, 0] = 1.0
-    kernel[0, 0, 1, 1, 2] = 1.0
-
-    neighbor_sum = F.conv3d(volume, kernel, padding=1)
-    neighbor_count = F.conv3d(mask, kernel, padding=1)
-    neighbor_mean = neighbor_sum / torch.clamp(neighbor_count, min=1.0)
-    mean_flat = neighbor_mean.reshape(-1)[flat_indices]
-    has_neighbors = neighbor_count.reshape(-1)[flat_indices] > 0.0
-    return torch.where(has_neighbors, mean_flat, activity)
+    return flat_indices, activity_flat.view(*grid_shape), mask_flat.view(*grid_shape)
 
 
-def huber_pair_gradient(left, right, delta):
-    """Return Huber prior gradients for one pair of neighboring voxels."""
-    delta = float(delta)
-    if delta <= 0.0:
-        raise ValueError("Huber prior delta must be > 0.")
-
-    difference = left - right
-    left_gradient = difference / torch.sqrt(1.0 + (difference / delta) ** 2)
-    return left_gradient, -left_gradient
-
-
-def rdp_pair_gradient(left, right, gamma):
-    """Return Relative Difference Penalty gradients for one neighboring voxel pair."""
-    gamma = float(gamma)
-    if gamma < 0.0:
-        raise ValueError("RDP prior gamma must be >= 0.")
-
-    difference = left - right
-    abs_difference = torch.abs(difference)
-    sign_difference = torch.sign(difference)
-    denominator = torch.clamp(left + right + gamma * abs_difference, min=EPS)
-    squared_difference = difference * difference
-    left_gradient = (
-        2.0 * difference * denominator
-        - squared_difference * (1.0 + gamma * sign_difference)
-    ) / (denominator * denominator)
-    right_gradient = (
-        -2.0 * difference * denominator
-        - squared_difference * (1.0 - gamma * sign_difference)
-    ) / (denominator * denominator)
-    return left_gradient, right_gradient
-
-
-def tv_pair_gradient(left, right, epsilon):
-    """Return smoothed total-variation gradients for one neighboring voxel pair."""
-    epsilon = float(epsilon)
-    if epsilon <= 0.0:
-        raise ValueError("TV prior epsilon must be > 0.")
-
-    difference = left - right
-    denominator = torch.sqrt(difference * difference + epsilon * epsilon)
-    left_gradient = difference / torch.clamp(denominator, min=EPS)
-    return left_gradient, -left_gradient
-
-
-def pairwise_neighbor_prior_gradient(
-    activity,
-    candidate_flat_indices,
-    grid_shape,
-    device,
-    pair_gradient_fn,
-    **pair_gradient_kwargs,
-):
-    """Return pairwise six-neighbor prior gradient for candidate voxels."""
-    flat_indices = torch.as_tensor(candidate_flat_indices, dtype=torch.long, device=device)
-    num_grid_points = int(np.prod(grid_shape))
-    activity_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
-    mask_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
-    activity_flat[flat_indices] = activity
-    mask_flat[flat_indices] = 1.0
-
-    volume = activity_flat.view(*grid_shape)
-    mask = mask_flat.view(*grid_shape)
-    gradient_volume = torch.zeros_like(volume)
-
-    def add_edge_gradient(left_slices, right_slices):
-        left = volume[left_slices]
-        right = volume[right_slices]
-        left_gradient, right_gradient = pair_gradient_fn(
-            left,
-            right,
-            **pair_gradient_kwargs,
-        )
-        valid = mask[left_slices] * mask[right_slices]
-
-        gradient_volume[left_slices] = gradient_volume[left_slices] + left_gradient * valid
-        gradient_volume[right_slices] = gradient_volume[right_slices] + right_gradient * valid
-
-    add_edge_gradient((slice(0, -1), slice(None), slice(None)), (slice(1, None), slice(None), slice(None)))
-    add_edge_gradient((slice(None), slice(0, -1), slice(None)), (slice(None), slice(1, None), slice(None)))
-    add_edge_gradient((slice(None), slice(None), slice(0, -1)), (slice(None), slice(None), slice(1, None)))
-
-    return gradient_volume.reshape(-1)[flat_indices]
-
-
-def huber_neighbor_prior_gradient(
-    activity,
-    candidate_flat_indices,
-    grid_shape,
-    device,
-    delta=1.0,
-):
-    """Return six-neighbor Huber prior gradient for candidate voxels."""
-    return pairwise_neighbor_prior_gradient(
-        activity=activity,
-        candidate_flat_indices=candidate_flat_indices,
-        grid_shape=grid_shape,
-        device=device,
-        pair_gradient_fn=huber_pair_gradient,
-        delta=delta,
-    )
-
-
-def rdp_neighbor_prior_gradient(
-    activity,
-    candidate_flat_indices,
-    grid_shape,
-    device,
-    gamma=1.0,
-):
-    """Return six-neighbor RDP prior gradient for candidate voxels."""
-    return pairwise_neighbor_prior_gradient(
-        activity=activity,
-        candidate_flat_indices=candidate_flat_indices,
-        grid_shape=grid_shape,
-        device=device,
-        pair_gradient_fn=rdp_pair_gradient,
-        gamma=gamma,
-    )
+def l1_prior_gradient(activity):
+    """Return L1 sparsity prior gradient for candidate voxels."""
+    return torch.ones_like(activity)
 
 
 def tv_neighbor_prior_gradient(
@@ -787,19 +656,38 @@ def tv_neighbor_prior_gradient(
     epsilon=1e-3,
 ):
     """Return six-neighbor smoothed total-variation prior gradient for candidate voxels."""
-    return pairwise_neighbor_prior_gradient(
+    epsilon = float(epsilon)
+    if epsilon <= 0.0:
+        raise ValueError("TV prior epsilon must be > 0.")
+
+    flat_indices, volume, mask = candidate_activity_volume(
         activity=activity,
         candidate_flat_indices=candidate_flat_indices,
         grid_shape=grid_shape,
         device=device,
-        pair_gradient_fn=tv_pair_gradient,
-        epsilon=epsilon,
     )
+    gradient_volume = torch.zeros_like(volume)
+
+    def add_tv_edge_gradient(left_slices, right_slices):
+        left = volume[left_slices]
+        right = volume[right_slices]
+        difference = left - right
+        denominator = torch.sqrt(difference * difference + epsilon * epsilon)
+        left_gradient = difference / torch.clamp(denominator, min=EPS)
+        valid = mask[left_slices] * mask[right_slices]
+
+        gradient_volume[left_slices] = gradient_volume[left_slices] + left_gradient * valid
+        gradient_volume[right_slices] = gradient_volume[right_slices] - left_gradient * valid
+
+    add_tv_edge_gradient((slice(0, -1), slice(None), slice(None)), (slice(1, None), slice(None), slice(None)))
+    add_tv_edge_gradient((slice(None), slice(0, -1), slice(None)), (slice(None), slice(1, None), slice(None)))
+    add_tv_edge_gradient((slice(None), slice(None), slice(0, -1)), (slice(None), slice(None), slice(1, None)))
+
+    return gradient_volume.reshape(-1)[flat_indices]
 
 
 def compute_reconstruction_prior_gradient(
     activity,
-    candidate_positions,
     candidate_grid,
     reconstruction_priors,
     device,
@@ -808,7 +696,6 @@ def compute_reconstruction_prior_gradient(
     if not reconstruction_priors:
         return torch.zeros_like(activity)
 
-    candidate_positions = torch.as_tensor(candidate_positions, dtype=TORCH_DTYPE, device=device)
     gradient = torch.zeros_like(activity)
     for prior in reconstruction_priors:
         prior_type = str(prior.get("type", "")).strip().lower()
@@ -819,32 +706,8 @@ def compute_reconstruction_prior_gradient(
         if beta == 0.0:
             continue
 
-        if prior_type in ("smoothness", "neighbor_smoothness"):
-            neighbor_mean = neighborhood_mean_activity(
-                activity=activity,
-                candidate_flat_indices=candidate_grid["candidate_flat_indices"],
-                grid_shape=candidate_grid["grid_shape"],
-                device=device,
-            )
-            gradient = gradient + beta * (activity - neighbor_mean)
-        elif prior_type in ("l1", "sparsity"):
-            gradient = gradient + beta
-        elif prior_type in ("huber", "huber_penalty"):
-            gradient = gradient + beta * huber_neighbor_prior_gradient(
-                activity=activity,
-                candidate_flat_indices=candidate_grid["candidate_flat_indices"],
-                grid_shape=candidate_grid["grid_shape"],
-                device=device,
-                delta=float(prior.get("delta", 1.0)),
-            )
-        elif prior_type in ("rdp", "relative_difference", "relative_difference_penalty"):
-            gradient = gradient + beta * rdp_neighbor_prior_gradient(
-                activity=activity,
-                candidate_flat_indices=candidate_grid["candidate_flat_indices"],
-                grid_shape=candidate_grid["grid_shape"],
-                device=device,
-                gamma=float(prior.get("gamma", 1.0)),
-            )
+        if prior_type in ("l1", "sparsity"):
+            gradient = gradient + beta * l1_prior_gradient(activity)
         elif prior_type in ("tv", "total_variation", "compactness"):
             gradient = gradient + beta * tv_neighbor_prior_gradient(
                 activity=activity,
@@ -856,7 +719,7 @@ def compute_reconstruction_prior_gradient(
         else:
             raise ValueError(
                 f"Unknown reconstruction prior type {prior_type!r}. "
-                "Use: smoothness, l1, huber, rdp, tv."
+                "Use: l1, tv."
             )
 
     return gradient
@@ -1145,13 +1008,12 @@ def mapem_reconstruction(
             ratio = counts_flat / torch.clamp(predicted_counts, min=EPS)
             prior_gradient = compute_reconstruction_prior_gradient(
                 activity=activity,
-                candidate_positions=candidate_positions,
                 candidate_grid=candidate_grid,
                 reconstruction_priors=reconstruction_priors,
                 device=device,
             )
             denominator = sensitivity + prior_gradient
-            # Smoothness priors can have a negative local gradient. If that
+            # Neighbor priors can have a negative local gradient. If that
             # nearly cancels the tiny H sensitivity, the EM denominator collapses
             # and activity explodes. Keep the prior influence bounded relative
             # to the data sensitivity.
@@ -1351,7 +1213,6 @@ def bsrem_reconstruction(
                 data_gradient = subset_scale * (subset_matrix.T @ (ratio - 1.0))
                 prior_gradient = compute_reconstruction_prior_gradient(
                     activity=activity,
-                    candidate_positions=candidate_positions,
                     candidate_grid=candidate_grid,
                     reconstruction_priors=reconstruction_priors,
                     device=device,
