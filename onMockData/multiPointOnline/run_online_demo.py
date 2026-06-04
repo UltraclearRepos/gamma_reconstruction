@@ -55,11 +55,11 @@ def make_default_config():
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
         "NUM_MEASUREMENTS": 100,  # Number of detector positions / generated measurements.
-        "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
-            {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
-            {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
-            # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
-        ],
+        # "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
+        #     {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
+        #     {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
+        #     # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
+        # ],
         # "TRUE_SOURCE_SPECS": [
         #     # Lewy płat: głębiej, rozmyty
         #     {"position": (-2.5, 1.5, -1.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
@@ -76,14 +76,14 @@ def make_default_config():
         #     # Punkt referencyjny z boku dla oceny ogólnej geometrii
         #     {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
         # ],
-        # "TRUE_SOURCE_SPECS": [
-        #     # Masywne, rozmyte źródło centralne
-        #     {"position": (-1.0, 0.0, 0.0), "strength_per_second": 20000.0, "spread_cm": 2.0},
-        #     # Bardzo małe, słabe, odseparowane geometrycznie źródło
-        #     {"position": (4.0, 4.0, 3.0), "strength_per_second": 5500.0, "spread_cm": 0.5},
-        #     # Średnie źródło na "dolnej" krawędzi trajektorii Z
-        #     {"position": (2.0, -3.0, -4.0), "strength_per_second": 5000.0, "spread_cm": 0.7},
-        # ],
+        "TRUE_SOURCE_SPECS": [
+            # Masywne, rozmyte źródło centralne
+            {"position": (-1.0, 0.0, 0.0), "strength_per_second": 20000.0, "spread_cm": 2.0},
+            # Bardzo małe, słabe, odseparowane geometrycznie źródło
+            {"position": (4.0, 4.0, 3.0), "strength_per_second": 5500.0, "spread_cm": 0.9},
+            # Średnie źródło na "dolnej" krawędzi trajektorii Z
+            {"position": (2.0, -3.0, -4.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
+        ],
         "NUM_CHANNELS": 16,  # Number of detector channels.
         "DIODE_PITCH": 0.15875,  # Channel width and center-to-center pitch [cm]; 16 channels span 2.54 cm.
         "MEASUREMENT_DURATION_SECONDS": 1.0,  # Duration of one measurement; rates below are multiplied by this.
@@ -145,8 +145,8 @@ def make_default_config():
         "ONLINE_UPDATES_PER_BATCH": 50,  # BSREM passes over all received measurements after each incoming batch.
         "ONLINE_HISTORY_INTERVAL": 50,  # Store one history snapshot every N online updates.
         "RECONSTRUCTION_PRIORS": [
-            {"type": "tv", "beta": 0.001, "epsilon": 0.001},  # Smoothed total variation; encourages compact blobs with sharper boundaries.
-            {"type": "l1", "beta": 0.001},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
+            {"type": "tv", "beta": 0.01, "epsilon": 0.01},  # Smoothed total variation; encourages compact blobs with sharper boundaries.
+            {"type": "l1", "beta": 0.01},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
         ],  # Priors used by online BSREM
         "BSREM_NUM_SUBSETS": 8,  # Ordered subsets over measurements received so far.
         "BSREM_RELAXATION_INITIAL": 1.0,  # Initial BSREM relaxation step.
@@ -483,7 +483,35 @@ def main():
     print_activity_map_similarity_summary(experiment["activity_map_similarity"])
     print_activity_component_matching_summary(experiment["activity_component_matching"])
 
-    output_dir = ON_MOCK_DATA_DIR / "multiPointOnline" / "visualizations"
+    variant_id = 0
+    if len(dataset["true_sources"]) > 0:
+        pos0 = np.array(dataset["true_sources"][0]["position"], dtype=float)
+        if np.allclose(pos0, [-6.5, 2.6, -0.8]):
+            variant_id = 1
+        elif np.allclose(pos0, [-2.5, 1.5, -1.0]):
+            variant_id = 2
+        elif np.allclose(pos0, [0.0, -2.0, 0.0]):
+            variant_id = 3
+        elif np.allclose(pos0, [-1.0, 0.0, 0.0]):
+            variant_id = 4
+    tv_beta = 0.0
+    tv_epsilon = 0.0
+    l1_beta = 0.0
+    for prior in config.get("RECONSTRUCTION_PRIORS", []):
+        if prior.get("type") == "tv":
+            tv_beta = prior.get("beta", 0.0)
+            tv_epsilon = prior.get("epsilon", 0.0)
+        elif prior.get("type") == "l1":
+            l1_beta = prior.get("beta", 0.0)
+            
+    output_dir = (
+        ON_MOCK_DATA_DIR 
+        / "multiPointOnline" 
+        / "visualizations" 
+        / f"variant_{variant_id}" 
+        / f"tv_{tv_beta}_{tv_epsilon}" 
+        / f"l1_{l1_beta}"
+    )
     forward_model_dir = output_dir / "forward_model"
     thresholded_history_dir = output_dir / "online_thresholded_activity_history_3d"
     accepted_components_history_dir = output_dir / "online_accepted_components_history_3d"
@@ -514,6 +542,7 @@ def main():
         save_path=output_dir / "true_voxel_activity.png",
         show=False,
         max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
+        voxel_size_cm=result["voxel_size_cm"],
         axis_limits=config["AXIS_LIMITS_3D"],
     )
     visualize_activity_map_comparison(
@@ -664,6 +693,7 @@ def main():
         min_component_voxels=1,
         min_total_activity_fraction=config["ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION"],
         frames_dir=thresholded_history_dir,
+        voxel_size_cm=result["voxel_size_cm"],
         refinement_events=result.get("refinement_events", []),
         axis_limits=config["AXIS_LIMITS_3D"],
         panel_mode="thresholded",
@@ -687,6 +717,7 @@ def main():
         min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
         min_total_activity_fraction=config["ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION"],
         frames_dir=accepted_components_history_dir,
+        voxel_size_cm=result["voxel_size_cm"],
         refinement_events=result.get("refinement_events", []),
         axis_limits=config["AXIS_LIMITS_3D"],
         panel_mode="accepted_components",

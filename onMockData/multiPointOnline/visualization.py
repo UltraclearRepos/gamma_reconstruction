@@ -15,6 +15,41 @@ from common.detector_response_components import (
 )
 
 
+def plot_true_source_voxels(
+    ax,
+    true_sources,
+    voxel_size_cm,
+    color="tab:green",
+    alpha=1.0,
+    linewidth=0.35,
+    label="true source voxels",
+):
+    """Draw true sources as wireframe spheres (outline)."""
+    if not true_sources:
+        return
+
+    # Add one invisible handle so Matplotlib creates a clean legend entry.
+    ax.plot([], [], [], color=color, linewidth=float(linewidth), label=label)
+
+    # 14 and 9 give a nice smooth sphere
+    u, v = np.mgrid[0:2*np.pi:14j, 0:np.pi:9j]
+
+    for source in true_sources:
+        position = np.asarray(source["position"], dtype=float)
+        # In simulation.py, spread_cm is literally used as radius_cm
+        spread = float(source.get("spread_cm", 0.0))
+        if spread > 0.0:
+            radius = spread
+        else:
+            radius = float(voxel_size_cm) / 2.0
+        
+        x = radius * np.cos(u) * np.sin(v) + position[0]
+        y = radius * np.sin(u) * np.sin(v) + position[1]
+        z = radius * np.cos(v) + position[2]
+        
+        ax.plot_wireframe(x, y, z, color=color, alpha=float(alpha), linewidth=float(linewidth))
+
+
 def plot_detector_forward_directions(
     ax,
     translations,
@@ -113,7 +148,6 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limit
     rotations = dataset.get("rotations")
     forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
     source_positions = np.array([source["position"] for source in dataset["true_sources"]])
-    source_strengths = np.array([source["strength"] for source in dataset["true_sources"]])
 
     fig = plt.figure(figsize=(8, 7))
     ax = fig.add_subplot(111, projection="3d")
@@ -147,35 +181,19 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limit
         linewidth=1.0,
     )
 
-    max_strength = max(float(np.max(source_strengths)), EPS)
-    source_sizes = 120.0 + 180.0 * source_strengths / max_strength
-    ax.scatter(
-        source_positions[:, 0],
-        source_positions[:, 1],
-        source_positions[:, 2],
-        color="tab:red",
-        s=source_sizes,
-        marker="*",
-        edgecolor="black",
-        linewidth=0.8,
-        alpha=0.16,
-        depthshade=False,
-        label="true sources",
-    )
-
     for index, source in enumerate(dataset["true_sources"], start=1):
         position = source["position"]
         ax.text(
             position[0],
             position[1],
-            position[2] + 3.5,
+            position[2] + max(float(source.get("spread_cm", 0.0)), 0.4) + 0.35,
             f"S{index}",
             fontsize=9,
         )
 
-    points_for_scale = np.vstack([translations, source_positions])
+    points_for_scale = [translations, source_positions]
     if axis_limits is None:
-        set_equal_3d_axes(ax, points_for_scale)
+        set_equal_3d_axes(ax, np.vstack(points_for_scale))
     else:
         set_3d_axis_limits(ax, axis_limits)
 
@@ -238,6 +256,7 @@ def visualize_true_voxel_activity(
     save_path=None,
     show=False,
     max_voxels=300,
+    voxel_size_cm=1.0,
     axis_limits=None,
 ):
     """Show generated ground-truth activity projected onto reconstruction voxels."""
@@ -260,27 +279,12 @@ def visualize_true_voxel_activity(
             active_indices = active_indices[np.argsort(true_activity[active_indices])[-max_voxels:]]
 
         voxel_positions = candidate_positions[active_indices]
-        voxel_activity = true_activity[active_indices]
-        normalized_activity = np.clip(
-            voxel_activity / max(float(np.max(voxel_activity)), EPS),
-            0.0,
-            1.0,
+        plot_true_source_voxels(
+            ax=ax,
+            true_sources=dataset["true_sources"],
+            voxel_size_cm=voxel_size_cm,
+            alpha=1.0,
         )
-        voxel_sizes = 12.0 + 70.0 * normalized_activity
-
-        scatter = ax.scatter(
-            voxel_positions[:, 0],
-            voxel_positions[:, 1],
-            voxel_positions[:, 2],
-            c=np.log1p(voxel_activity),
-            s=voxel_sizes,
-            cmap="viridis",
-            alpha=0.16 if "true" in str(label).lower() else 0.42,
-            depthshade=False,
-            label="true voxel activity",
-        )
-        colorbar = fig.colorbar(scatter, ax=ax, shrink=0.75)
-        colorbar.set_label("log(1 + true activity)")
         points_for_scale.append(voxel_positions)
 
     ax.plot(
@@ -367,25 +371,34 @@ def visualize_activity_map_comparison(
                 active_indices = active_indices[np.argsort(activity[active_indices])[-max_voxels:]]
             voxel_positions = candidate_positions[active_indices]
             voxel_activity = activity[active_indices]
-            normalized_activity = np.clip(
-                voxel_activity / max(float(np.max(voxel_activity)), EPS),
-                0.0,
-                1.0,
-            )
-            voxel_sizes = 10.0 + 65.0 * normalized_activity
-            scatter = ax.scatter(
-                voxel_positions[:, 0],
-                voxel_positions[:, 1],
-                voxel_positions[:, 2],
-                c=np.log1p(voxel_activity),
-                s=voxel_sizes,
-                cmap=cmap,
-                alpha=0.16 if "true" in str(label).lower() else 0.42,
-                depthshade=False,
-                label=label,
-            )
-            colorbar = fig.colorbar(scatter, ax=ax, shrink=0.70)
-            colorbar.set_label("log(1 + activity)")
+            if "true" in str(label).lower():
+                plot_true_source_voxels(
+                    ax=ax,
+                    true_sources=dataset["true_sources"],
+                    voxel_size_cm=voxel_size_cm,
+                    alpha=1.0,
+                    label="true source voxels",
+                )
+            else:
+                normalized_activity = np.clip(
+                    voxel_activity / max(float(np.max(voxel_activity)), EPS),
+                    0.0,
+                    1.0,
+                )
+                voxel_sizes = 10.0 + 65.0 * normalized_activity
+                scatter = ax.scatter(
+                    voxel_positions[:, 0],
+                    voxel_positions[:, 1],
+                    voxel_positions[:, 2],
+                    c=np.log1p(voxel_activity),
+                    s=voxel_sizes,
+                    cmap=cmap,
+                    alpha=0.42,
+                    depthshade=False,
+                    label=label,
+                )
+                colorbar = fig.colorbar(scatter, ax=ax, shrink=0.70)
+                colorbar.set_label("log(1 + activity)")
             points_for_scale.append(voxel_positions)
 
         ax.plot(
@@ -434,6 +447,7 @@ def visualize_activity_map_comparison(
             true_activity=true_activity,
             reconstructed_activity=reconstructed_activity,
             threshold_fraction=component_matching["threshold_fraction"],
+            voxel_size_cm=voxel_size_cm,
             axis_limits=axis_limits,
             title="Voxels above blob threshold",
         )
@@ -453,6 +467,7 @@ def visualize_activity_map_comparison(
             true_activity=true_activity,
             reconstructed_activity=reconstructed_activity,
             component_matching=component_matching,
+            voxel_size_cm=voxel_size_cm,
             axis_limits=axis_limits,
             title="Thresholded voxels in accepted components",
         )
@@ -468,6 +483,7 @@ def plot_thresholded_activity_panel(
     true_activity,
     reconstructed_activity,
     threshold_fraction,
+    voxel_size_cm=1.0,
     axis_limits=None,
     title="Voxels above blob threshold",
     reconstructed_color_limits=None,
@@ -511,16 +527,10 @@ def plot_thresholded_activity_panel(
 
     if np.any(true_mask):
         true_positions = candidate_positions[true_mask]
-        ax.scatter(
-            true_positions[:, 0],
-            true_positions[:, 1],
-            true_positions[:, 2],
-            color="tab:green",
-            s=34,
-            marker="o",
-            alpha=0.03,
-            depthshade=False,
-            label="true source voxels",
+        plot_true_source_voxels(
+            ax=ax,
+            true_sources=dataset["true_sources"],
+            voxel_size_cm=voxel_size_cm,
         )
         points_for_scale.append(true_positions)
 
@@ -641,6 +651,7 @@ def plot_component_filtered_thresholded_activity_from_params(
     threshold_fraction,
     min_component_voxels,
     min_total_activity_fraction,
+    voxel_size_cm=1.0,
     axis_limits=None,
     title="Thresholded voxels in accepted components",
     frame_label=None,
@@ -664,6 +675,7 @@ def plot_component_filtered_thresholded_activity_from_params(
         true_activity=true_activity,
         reconstructed_activity=reconstructed_activity,
         threshold_fraction=threshold_fraction,
+        voxel_size_cm=voxel_size_cm,
         axis_limits=axis_limits,
         title=(
             f"{title}\n"
@@ -683,6 +695,7 @@ def plot_component_filtered_thresholded_activity_panel(
     true_activity,
     reconstructed_activity,
     component_matching,
+    voxel_size_cm=1.0,
     axis_limits=None,
     title="Thresholded voxels in accepted components",
 ):
@@ -699,6 +712,7 @@ def plot_component_filtered_thresholded_activity_panel(
         true_activity=true_activity,
         reconstructed_activity=reconstructed_activity,
         threshold_fraction=component_matching["threshold_fraction"],
+        voxel_size_cm=voxel_size_cm,
         axis_limits=axis_limits,
         title=(
             f"{title}\n"
@@ -769,6 +783,7 @@ def plot_refinement_support_panel(
     true_activity,
     support_positions,
     support_activity=None,
+    voxel_size_cm=1.0,
     axis_limits=None,
     title="Refinement support voxels",
     frame_label=None,
@@ -794,16 +809,10 @@ def plot_refinement_support_panel(
     true_mask = true_activity > EPS
     if np.any(true_mask):
         true_positions = candidate_positions[true_mask]
-        ax.scatter(
-            true_positions[:, 0],
-            true_positions[:, 1],
-            true_positions[:, 2],
-            color="tab:green",
-            s=34,
-            marker="o",
-            alpha=0.03,
-            depthshade=False,
-            label="true source voxels",
+        plot_true_source_voxels(
+            ax=ax,
+            true_sources=dataset["true_sources"],
+            voxel_size_cm=voxel_size_cm,
         )
         points_for_scale.append(true_positions)
 
@@ -876,6 +885,7 @@ def render_online_refinement_diagnostic_frames(
     min_component_voxels,
     min_total_activity_fraction,
     frames_dir,
+    voxel_size_cm=1.0,
     refinement_events=None,
     axis_limits=None,
     panel_mode="accepted_components",
@@ -945,6 +955,7 @@ def render_online_refinement_diagnostic_frames(
                 true_activity=true_activity,
                 reconstructed_activity=online_activity,
                 threshold_fraction=threshold_fraction,
+                voxel_size_cm=voxel_size_cm,
                 axis_limits=axis_limits,
                 title=f"Online reconstruction thresholded voxels\n{frame_label}",
             )
@@ -960,6 +971,7 @@ def render_online_refinement_diagnostic_frames(
                 true_activity=true_activity,
                 support_positions=support_positions,
                 support_activity=support_activity,
+                voxel_size_cm=voxel_size_cm,
                 axis_limits=axis_limits,
                 title=right_title,
                 frame_label=frame_label,
@@ -976,6 +988,7 @@ def render_online_refinement_diagnostic_frames(
                 threshold_fraction=threshold_fraction,
                 min_component_voxels=min_component_voxels,
                 min_total_activity_fraction=min_total_activity_fraction,
+                voxel_size_cm=voxel_size_cm,
                 axis_limits=axis_limits,
                 title="Online reconstruction accepted components",
                 frame_label=frame_label,
@@ -992,6 +1005,7 @@ def render_online_refinement_diagnostic_frames(
                 true_activity=true_activity,
                 support_positions=support_positions,
                 support_activity=support_activity,
+                voxel_size_cm=voxel_size_cm,
                 axis_limits=axis_limits,
                 title=right_title,
                 frame_label=frame_label,
@@ -1059,6 +1073,7 @@ def render_thresholded_activity_history_frames(
     history,
     threshold_fraction,
     frames_dir,
+    voxel_size_cm=1.0,
     axis_limits=None,
 ):
     """Save one thresholded true/reconstructed voxel panel per reconstruction snapshot."""
@@ -1102,6 +1117,7 @@ def render_thresholded_activity_history_frames(
             true_activity=true_activity,
             reconstructed_activity=activity_snapshot,
             threshold_fraction=threshold_fraction,
+            voxel_size_cm=voxel_size_cm,
             axis_limits=axis_limits,
             title=f"Voxels above blob threshold\nframe {frame_index}/{num_frames} | iteration {iteration}",
             reconstructed_color_limits=reconstructed_color_limits,
@@ -1582,18 +1598,6 @@ def visualize_system_matrix_sensitivity_3d(
     rotations = dataset.get("rotations")
     forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
     true_source_positions = np.array([source["position"] for source in dataset["true_sources"]], dtype=float)
-    true_source_strengths = np.asarray(
-        [
-            source.get("strength", source.get("strength_per_second", 0.0))
-            for source in dataset["true_sources"]
-        ],
-        dtype=float,
-    )
-    true_source_sizes = 80.0 + 180.0 * np.clip(
-        true_source_strengths / max(float(np.max(true_source_strengths)), EPS),
-        0.0,
-        1.0,
-    )
 
     fig = plt.figure(figsize=(8, 7))
     ax = fig.add_subplot(111, projection="3d")
@@ -1643,18 +1647,6 @@ def visualize_system_matrix_sensitivity_3d(
     search_outline_points = plot_search_cylinder_outline(ax, dataset)
     if search_outline_points is not None:
         points_for_scale.append(search_outline_points)
-
-    ax.scatter(
-        true_source_positions[:, 0],
-        true_source_positions[:, 1],
-        true_source_positions[:, 2],
-        marker="*",
-        s=true_source_sizes,
-        color="black",
-        alpha=0.16,
-        depthshade=False,
-        label="true sources",
-    )
 
     if axis_limits is None:
         set_equal_3d_axes(ax, np.vstack(points_for_scale))
@@ -1708,18 +1700,6 @@ def render_system_matrix_measurement_3d_frames(
     rotations = dataset.get("rotations")
     forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
     true_source_positions = np.array([source["position"] for source in dataset["true_sources"]], dtype=float)
-    true_source_strengths = np.asarray(
-        [
-            source.get("strength", source.get("strength_per_second", 0.0))
-            for source in dataset["true_sources"]
-        ],
-        dtype=float,
-    )
-    true_source_sizes = 80.0 + 180.0 * np.clip(
-        true_source_strengths / max(float(np.max(true_source_strengths)), EPS),
-        0.0,
-        1.0,
-    )
     frame_paths = []
 
     for measurement_index in range(int(num_measurements)):
@@ -1779,18 +1759,6 @@ def render_system_matrix_measurement_3d_frames(
             alpha=0.9,
             linewidth=1.4,
         )
-        ax.scatter(
-            true_source_positions[:, 0],
-            true_source_positions[:, 1],
-            true_source_positions[:, 2],
-            marker="*",
-            s=true_source_sizes,
-            color="black",
-            alpha=0.16,
-            depthshade=False,
-            label="true sources",
-        )
-
         if axis_limits is None:
             points_for_scale = [translations, true_source_positions, voxel_positions]
             set_equal_3d_axes(ax, np.vstack(points_for_scale))

@@ -138,10 +138,9 @@ def make_default_config():
         "NUM_ITERATIONS": 1000,  # ML-EM iteration count.
         "HISTORY_INTERVAL": 100,  # How often ML-EM stores history snapshots.
         "RECONSTRUCTION_PRIORS": [
-            {"type": "tv", "beta": 0.01, "epsilon": 0.001},  # Smoothed total variation; encourages compact blobs with sharper boundaries than Gaussian sieve.
+            {"type": "tv", "beta": 0.01, "epsilon": 0.001},  # Smoothed total variation; encourages compact blobs with sharper boundaries.
             {"type": "l1", "beta": 0.01},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
         ],  # Priors shared by MAP-EM and BSREM
-        "RECONSTRUCTION_SIEVE_SIGMA_CM": 0.0,  # Optional post-update Gaussian sieve filter; 0 disables it.
         "BSREM_NUM_SUBSETS": 8,  # Ordered subsets per BSREM iteration.
         "BSREM_RELAXATION_INITIAL": 1.0,  # Initial BSREM relaxation step.
         "BSREM_RELAXATION_DECAY": 0.01,  # Larger values damp later BSREM iterations more strongly.
@@ -153,12 +152,12 @@ def make_default_config():
         "THRESHOLD_REFINEMENT_NUM_ITERATIONS": 100,
         "THRESHOLD_REFINEMENT_HISTORY_INTERVAL": 10,
         "THRESHOLD_REFINEMENT_PRIORS": [],  # Priors used only in the refinement pass.
-        "THRESHOLD_REFINEMENT_SIEVE_SIGMA_CM": 0.0,
         "THRESHOLD_REFINEMENT_PADDING_CM": 0.75,  # Add nearby voxels around the thresholded support.
 
         # Activity-map metrics.
         "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.1,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
         "ACTIVITY_COMPONENT_MIN_VOXELS": 3,  # Minimum connected voxels needed to report a blob.
+        "ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION": 0.1,  # Minimum blob total activity as fraction of the strongest reconstructed blob.
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,  # Print full generated measurement x channel table.
@@ -285,7 +284,6 @@ def run_experiment(overrides=None):
         num_iterations=config["NUM_ITERATIONS"],
         history_interval=config["HISTORY_INTERVAL"],
         reconstruction_priors=config["RECONSTRUCTION_PRIORS"],
-        reconstruction_sieve_sigma_cm=config["RECONSTRUCTION_SIEVE_SIGMA_CM"],
         bsrem_num_subsets=config["BSREM_NUM_SUBSETS"],
         bsrem_relaxation_initial=config["BSREM_RELAXATION_INITIAL"],
         bsrem_relaxation_decay=config["BSREM_RELAXATION_DECAY"],
@@ -307,6 +305,7 @@ def run_experiment(overrides=None):
             threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
             padding_cm=config["THRESHOLD_REFINEMENT_PADDING_CM"],
             min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+            min_total_activity_fraction=config["ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION"],
             method=(
                 config["reconstruction_method"]
                 if str(config["THRESHOLD_REFINEMENT_METHOD"]).strip().lower() == "same"
@@ -316,7 +315,6 @@ def run_experiment(overrides=None):
             num_iterations=config["THRESHOLD_REFINEMENT_NUM_ITERATIONS"],
             history_interval=config["THRESHOLD_REFINEMENT_HISTORY_INTERVAL"],
             reconstruction_priors=config["THRESHOLD_REFINEMENT_PRIORS"],
-            reconstruction_sieve_sigma_cm=config["THRESHOLD_REFINEMENT_SIEVE_SIGMA_CM"],
             bsrem_num_subsets=config["BSREM_NUM_SUBSETS"],
             bsrem_relaxation_initial=config["BSREM_RELAXATION_INITIAL"],
             bsrem_relaxation_decay=config["BSREM_RELAXATION_DECAY"],
@@ -341,6 +339,7 @@ def run_experiment(overrides=None):
         true_sources=dataset["true_sources"],
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+        min_total_activity_fraction=config["ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION"],
     )
     initial_activity_map_similarity = summarize_activity_map_similarity(
         true_activity=true_voxel_activity,
@@ -355,6 +354,7 @@ def run_experiment(overrides=None):
         true_sources=dataset["true_sources"],
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+        min_total_activity_fraction=config["ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION"],
     )
 
     return {
@@ -482,6 +482,8 @@ def main():
                 f"{threshold_refinement['full_voxel_count']} voxels, "
                 f"threshold={threshold_refinement['threshold_fraction']:.3g}, "
                 f"min_voxels={threshold_refinement['min_component_voxels']}, "
+                f"min_blob_activity="
+                f"{threshold_refinement.get('min_total_activity_fraction', 0.0):.3g}, "
                 f"padding={threshold_refinement['padding_cm']:.3g} cm, "
                 f"method={threshold_refinement['method']}"
             )
@@ -502,7 +504,35 @@ def main():
     print_activity_map_similarity_summary(experiment["activity_map_similarity"])
     print_activity_component_matching_summary(experiment["activity_component_matching"])
 
-    output_dir = ON_MOCK_DATA_DIR / "multiPoint" / "visualizations"
+    variant_id = 0
+    if len(dataset["true_sources"]) > 0:
+        pos0 = np.array(dataset["true_sources"][0]["position"], dtype=float)
+        if np.allclose(pos0, [-6.5, 2.6, -0.8]):
+            variant_id = 1
+        elif np.allclose(pos0, [-2.5, 1.5, -1.0]):
+            variant_id = 2
+        elif np.allclose(pos0, [0.0, -2.0, 0.0]):
+            variant_id = 3
+        elif np.allclose(pos0, [-1.0, 0.0, 0.0]):
+            variant_id = 4
+    tv_beta = 0.0
+    tv_epsilon = 0.0
+    l1_beta = 0.0
+    for prior in config.get("RECONSTRUCTION_PRIORS", []):
+        if prior.get("type") == "tv":
+            tv_beta = prior.get("beta", 0.0)
+            tv_epsilon = prior.get("epsilon", 0.0)
+        elif prior.get("type") == "l1":
+            l1_beta = prior.get("beta", 0.0)
+            
+    output_dir = (
+        ON_MOCK_DATA_DIR 
+        / "multiPoint" 
+        / "visualizations" 
+        / f"variant_{variant_id}" 
+        / f"tv_{tv_beta}_{tv_epsilon}" 
+        / f"l1_{l1_beta}"
+    )
     forward_model_dir = output_dir / "forward_model"
     history_3d_dir = output_dir / "mlem_activity_history_3d"
     thresholded_history_dir = output_dir / "mlem_thresholded_activity_history_3d"
@@ -531,6 +561,7 @@ def main():
         save_path=output_dir / "true_voxel_activity.png",
         show=False,
         max_voxels=config["UPDATE_FRAME_MAX_VOXELS"],
+        voxel_size_cm=result["voxel_size_cm"],
         axis_limits=config["AXIS_LIMITS_3D"],
     )
     visualize_activity_map_comparison(
@@ -717,6 +748,7 @@ def main():
         history=result["history"],
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         frames_dir=thresholded_history_dir,
+        voxel_size_cm=result["voxel_size_cm"],
         axis_limits=config["AXIS_LIMITS_3D"],
     )
     create_gif_from_frames(

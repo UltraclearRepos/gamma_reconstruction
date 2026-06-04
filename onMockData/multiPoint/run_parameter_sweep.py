@@ -4,7 +4,6 @@ Run reconstruction sweeps over method, priors, and true source scenarios.
 Only these parameters are varied:
 - reconstruction_method
 - RECONSTRUCTION_PRIORS
-- RECONSTRUCTION_SIEVE_SIGMA_CM
 - ACTIVITY_COMPONENT_THRESHOLD_FRACTION
 - TRUE_SOURCE_SPECS
 - NUM_ITERATIONS with HISTORY_INTERVAL
@@ -55,7 +54,7 @@ ACTIVITY_COMPONENT_THRESHOLD_FRACTION_VARIANTS = [
 ]
 
 # Available priors:
-# tv: beta range: 0.001 - 0.03, epsilon range: 1e-3 - 1e-2: Smoothed total variation; encourages compact, piecewise-smooth blobs with sharper boundaries than Gaussian sieve.
+# tv: beta range: 0.001 - 0.03, epsilon range: 1e-3 - 1e-2: Smoothed total variation; encourages compact, piecewise-smooth blobs with sharper boundaries.
 # l1: beta range: 0.001 - 0.1: Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
 
 RECONSTRUCTION_PRIOR_VARIANTS = [
@@ -155,7 +154,6 @@ SWEEP_CSV_COLUMNS = [
     "history_interval",
     "true_sources",
     "reconstruction_priors",
-    "reconstruction_sieve_sigma_cm",
     "activity_component_threshold_fraction",
     "elapsed_seconds",
     "system_matrix_seconds",
@@ -255,7 +253,7 @@ def prior_variant_name(priors):
 
 
 def iter_sweep_cases():
-    """Yield every method x prior x sieve x threshold x true-source x iteration x measurement combination."""
+    """Yield every method x prior x threshold x true-source x iteration x measurement combination."""
     for (
         method,
         reconstruction_priors,

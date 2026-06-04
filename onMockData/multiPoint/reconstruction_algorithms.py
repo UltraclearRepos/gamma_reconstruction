@@ -6,7 +6,6 @@ from time import perf_counter
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from common.geometry import EPS, points_in_search_cylinder
 from reconstruction_objective import (
@@ -82,7 +81,6 @@ def reconstruct_sources(
     num_iterations=40,
     history_interval=5,
     reconstruction_priors=None,
-    reconstruction_sieve_sigma_cm=0.0,
     bsrem_num_subsets=8,
     bsrem_relaxation_initial=1.0,
     bsrem_relaxation_decay=0.01,
@@ -150,7 +148,6 @@ def reconstruct_sources(
             num_iterations=num_iterations,
             history_interval=history_interval,
             reconstruction_priors=reconstruction_priors,
-            reconstruction_sieve_sigma_cm=reconstruction_sieve_sigma_cm,
             candidate_grid_override=candidate_grid_override,
             initial_activity=initial_activity,
         )
@@ -182,7 +179,6 @@ def reconstruct_sources(
             num_iterations=num_iterations,
             history_interval=history_interval,
             reconstruction_priors=reconstruction_priors,
-            reconstruction_sieve_sigma_cm=reconstruction_sieve_sigma_cm,
             num_subsets=bsrem_num_subsets,
             relaxation_initial=bsrem_relaxation_initial,
             relaxation_decay=bsrem_relaxation_decay,
@@ -329,6 +325,7 @@ def make_threshold_refinement_grid(
     threshold_fraction,
     padding_cm,
     min_component_voxels=1,
+    min_total_activity_fraction=0.0,
 ):
     """Build a candidate-grid subset from thresholded reconstructed activity."""
     from metrics import find_activity_components
@@ -346,6 +343,7 @@ def make_threshold_refinement_grid(
         grid_shape=result["grid_shape"],
         threshold_fraction=threshold_fraction,
         min_component_voxels=min_component_voxels,
+        min_total_activity_fraction=min_total_activity_fraction,
     )
     support_mask = np.zeros(len(activity), dtype=bool)
     for component in components:
@@ -385,6 +383,7 @@ def make_threshold_refinement_grid(
         "threshold_fraction": threshold_fraction,
         "padding_cm": padding_cm,
         "min_component_voxels": int(min_component_voxels),
+        "min_total_activity_fraction": float(min_total_activity_fraction),
     }
 
 
@@ -461,6 +460,9 @@ def expand_threshold_refinement_result(initial_result, refinement_result, suppor
                 "threshold_fraction": float(support_grid["threshold_fraction"]),
                 "padding_cm": float(support_grid["padding_cm"]),
                 "min_component_voxels": int(support_grid["min_component_voxels"]),
+                "min_total_activity_fraction": float(
+                    support_grid["min_total_activity_fraction"]
+                ),
                 "method": str(refinement_result.get("method", "unknown")),
             },
         }
@@ -483,6 +485,7 @@ def refine_thresholded_reconstruction(
     threshold_fraction,
     padding_cm=0.0,
     min_component_voxels=1,
+    min_total_activity_fraction=0.0,
     assumed_angular_peak_angle_deg=0.0,
     assumed_angular_width_deg=None,
     assumed_collimator_half_angle_deg=None,
@@ -497,7 +500,6 @@ def refine_thresholded_reconstruction(
     num_iterations=50,
     history_interval=10,
     reconstruction_priors=None,
-    reconstruction_sieve_sigma_cm=0.0,
     bsrem_num_subsets=8,
     bsrem_relaxation_initial=1.0,
     bsrem_relaxation_decay=0.01,
@@ -509,6 +511,7 @@ def refine_thresholded_reconstruction(
         threshold_fraction=threshold_fraction,
         padding_cm=padding_cm,
         min_component_voxels=min_component_voxels,
+        min_total_activity_fraction=min_total_activity_fraction,
     )
     if support_grid is None:
         refined = dict(initial_result)
@@ -548,7 +551,6 @@ def refine_thresholded_reconstruction(
         num_iterations=num_iterations,
         history_interval=history_interval,
         reconstruction_priors=reconstruction_priors,
-        reconstruction_sieve_sigma_cm=reconstruction_sieve_sigma_cm,
         bsrem_num_subsets=bsrem_num_subsets,
         bsrem_relaxation_initial=bsrem_relaxation_initial,
         bsrem_relaxation_decay=bsrem_relaxation_decay,
@@ -562,68 +564,6 @@ def refine_thresholded_reconstruction(
         refinement_result=refinement_result,
         support_grid=support_grid,
     )
-
-
-def gaussian_kernel_1d(sigma_voxels, device):
-    """Return a normalized 1D Gaussian kernel for separable 3D smoothing."""
-    sigma_voxels = float(sigma_voxels)
-    if sigma_voxels <= 0.0:
-        raise ValueError("sigma_voxels must be > 0.")
-    radius = max(1, int(np.ceil(3.0 * sigma_voxels)))
-    offsets = torch.arange(-radius, radius + 1, dtype=TORCH_DTYPE, device=device)
-    kernel = torch.exp(-0.5 * (offsets / sigma_voxels) ** 2)
-    kernel /= torch.sum(kernel)
-    return kernel
-
-
-def gaussian_smooth_volume(volume, kernel):
-    """Apply a separable 3D Gaussian filter to a 5D Torch volume."""
-    radius = kernel.numel() // 2
-    kernel_x = kernel.view(1, 1, -1, 1, 1)
-    kernel_y = kernel.view(1, 1, 1, -1, 1)
-    kernel_z = kernel.view(1, 1, 1, 1, -1)
-    volume = F.conv3d(volume, kernel_x, padding=(radius, 0, 0))
-    volume = F.conv3d(volume, kernel_y, padding=(0, radius, 0))
-    volume = F.conv3d(volume, kernel_z, padding=(0, 0, radius))
-    return volume
-
-
-def apply_sieve_filter(
-    activity,
-    candidate_flat_indices,
-    grid_shape,
-    voxel_size_cm,
-    sieve_sigma_cm,
-    device,
-):
-    """Smooth activity on the 3D voxel grid and return values at candidate voxels."""
-    sieve_sigma_cm = float(sieve_sigma_cm)
-    if sieve_sigma_cm <= 0.0:
-        return activity
-
-    sigma_voxels = sieve_sigma_cm / float(voxel_size_cm)
-    kernel = gaussian_kernel_1d(sigma_voxels=sigma_voxels, device=device)
-    flat_indices = torch.as_tensor(candidate_flat_indices, dtype=torch.long, device=device)
-    num_grid_points = int(np.prod(grid_shape))
-
-    total_before = torch.sum(activity)
-    activity_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
-    mask_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
-    activity_flat[flat_indices] = activity
-    mask_flat[flat_indices] = 1.0
-
-    volume = activity_flat.view(1, 1, *grid_shape)
-    mask = mask_flat.view(1, 1, *grid_shape)
-    smoothed_volume = gaussian_smooth_volume(volume, kernel)
-    smoothed_mask = gaussian_smooth_volume(mask, kernel)
-    normalized_volume = smoothed_volume / torch.clamp(smoothed_mask, min=EPS)
-
-    filtered = normalized_volume.reshape(-1)[flat_indices]
-    filtered = torch.clamp(filtered, min=EPS)
-    total_after = torch.sum(filtered)
-    if tensor_to_float(total_after) > EPS:
-        filtered = filtered * (total_before / total_after)
-    return filtered
 
 
 def candidate_activity_volume(
@@ -927,7 +867,6 @@ def mapem_reconstruction(
     num_iterations=40,
     history_interval=5,
     reconstruction_priors=None,
-    reconstruction_sieve_sigma_cm=0.0,
     candidate_grid_override=None,
     initial_activity=None,
 ):
@@ -981,7 +920,6 @@ def mapem_reconstruction(
     transfer_elapsed_seconds = perf_counter() - transfer_start_time
 
     reconstruction_priors = list(reconstruction_priors or [])
-    sieve_sigma_cm = float(reconstruction_sieve_sigma_cm)
 
     sensitivity = torch.sum(system_matrix_tensor, dim=0)
     initial_signal = torch.clamp(counts_flat - backgrounds_flat, min=0.0)
@@ -1021,14 +959,6 @@ def mapem_reconstruction(
             denominator = torch.maximum(denominator, denominator_floor)
             correction = (system_matrix_tensor.T @ ratio) / denominator
             activity *= correction
-            activity = apply_sieve_filter(
-                activity=activity,
-                candidate_flat_indices=candidate_grid["candidate_flat_indices"],
-                grid_shape=candidate_grid["grid_shape"],
-                voxel_size_cm=candidate_grid["voxel_size_cm"],
-                sieve_sigma_cm=sieve_sigma_cm,
-                device=device,
-            )
 
             if iteration == 1 or iteration % history_interval == 0 or iteration == num_iterations:
                 predicted_counts = predict_counts_from_activity(
@@ -1095,7 +1025,6 @@ def bsrem_reconstruction(
     num_iterations=40,
     history_interval=5,
     reconstruction_priors=None,
-    reconstruction_sieve_sigma_cm=0.0,
     num_subsets=8,
     relaxation_initial=1.0,
     relaxation_decay=0.01,
@@ -1159,7 +1088,6 @@ def bsrem_reconstruction(
     transfer_elapsed_seconds = perf_counter() - transfer_start_time
 
     reconstruction_priors = list(reconstruction_priors or [])
-    sieve_sigma_cm = float(reconstruction_sieve_sigma_cm)
 
     sensitivity = torch.sum(system_matrix_tensor, dim=0)
     initial_signal = torch.clamp(counts_flat - backgrounds_flat, min=0.0)
@@ -1229,14 +1157,6 @@ def bsrem_reconstruction(
                 )
                 activity = activity * (1.0 + relative_update)
                 activity = torch.clamp(activity, min=EPS)
-                activity = apply_sieve_filter(
-                    activity=activity,
-                    candidate_flat_indices=candidate_grid["candidate_flat_indices"],
-                    grid_shape=candidate_grid["grid_shape"],
-                    voxel_size_cm=candidate_grid["voxel_size_cm"],
-                    sieve_sigma_cm=sieve_sigma_cm,
-                    device=device,
-                )
 
             if iteration == 1 or iteration % history_interval == 0 or iteration == num_iterations:
                 predicted_counts = predict_counts_from_activity(
