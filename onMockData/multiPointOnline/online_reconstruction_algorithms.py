@@ -10,7 +10,6 @@ from time import perf_counter
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from common.geometry import EPS, points_in_search_cylinder
 from reconstruction_objective import (
@@ -169,68 +168,6 @@ def initialize_activity_tensor(initial_activity, candidate_positions, initial_ac
     if initial_activity.shape != (len(candidate_positions),):
         raise ValueError("initial_activity must match the candidate voxel count.")
     return torch.clamp(initial_activity, min=EPS).clone()
-
-
-def gaussian_kernel_1d(sigma_voxels, device):
-    """Return a normalized 1D Gaussian kernel for separable 3D smoothing."""
-    sigma_voxels = float(sigma_voxels)
-    if sigma_voxels <= 0.0:
-        raise ValueError("sigma_voxels must be > 0.")
-    radius = max(1, int(np.ceil(3.0 * sigma_voxels)))
-    offsets = torch.arange(-radius, radius + 1, dtype=TORCH_DTYPE, device=device)
-    kernel = torch.exp(-0.5 * (offsets / sigma_voxels) ** 2)
-    kernel /= torch.sum(kernel)
-    return kernel
-
-
-def gaussian_smooth_volume(volume, kernel):
-    """Apply a separable 3D Gaussian filter to a 5D Torch volume."""
-    radius = kernel.numel() // 2
-    kernel_x = kernel.view(1, 1, -1, 1, 1)
-    kernel_y = kernel.view(1, 1, 1, -1, 1)
-    kernel_z = kernel.view(1, 1, 1, 1, -1)
-    volume = F.conv3d(volume, kernel_x, padding=(radius, 0, 0))
-    volume = F.conv3d(volume, kernel_y, padding=(0, radius, 0))
-    volume = F.conv3d(volume, kernel_z, padding=(0, 0, radius))
-    return volume
-
-
-def apply_sieve_filter(
-    activity,
-    candidate_flat_indices,
-    grid_shape,
-    voxel_size_cm,
-    sieve_sigma_cm,
-    device,
-):
-    """Smooth activity on the 3D voxel grid and return values at candidate voxels."""
-    sieve_sigma_cm = float(sieve_sigma_cm)
-    if sieve_sigma_cm <= 0.0:
-        return activity
-
-    sigma_voxels = sieve_sigma_cm / float(voxel_size_cm)
-    kernel = gaussian_kernel_1d(sigma_voxels=sigma_voxels, device=device)
-    flat_indices = torch.as_tensor(candidate_flat_indices, dtype=torch.long, device=device)
-    num_grid_points = int(np.prod(grid_shape))
-
-    total_before = torch.sum(activity)
-    activity_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
-    mask_flat = torch.zeros(num_grid_points, dtype=TORCH_DTYPE, device=device)
-    activity_flat[flat_indices] = activity
-    mask_flat[flat_indices] = 1.0
-
-    volume = activity_flat.view(1, 1, *grid_shape)
-    mask = mask_flat.view(1, 1, *grid_shape)
-    smoothed_volume = gaussian_smooth_volume(volume, kernel)
-    smoothed_mask = gaussian_smooth_volume(mask, kernel)
-    normalized_volume = smoothed_volume / torch.clamp(smoothed_mask, min=EPS)
-
-    filtered = normalized_volume.reshape(-1)[flat_indices]
-    filtered = torch.clamp(filtered, min=EPS)
-    total_after = torch.sum(filtered)
-    if tensor_to_float(total_after) > EPS:
-        filtered = filtered * (total_before / total_after)
-    return filtered
 
 
 def candidate_activity_volume(
@@ -469,6 +406,7 @@ def make_refinement_support_indices(
     candidate_positions,
     threshold_fraction,
     min_component_voxels,
+    min_total_activity_fraction,
     padding_cm,
     candidate_flat_indices,
     grid_shape,
@@ -488,6 +426,7 @@ def make_refinement_support_indices(
         grid_shape=grid_shape,
         threshold_fraction=threshold_fraction,
         min_component_voxels=min_component_voxels,
+        min_total_activity_fraction=min_total_activity_fraction,
     )
     support_mask = np.zeros(len(activity), dtype=bool)
     for component in components:
@@ -531,7 +470,6 @@ def run_periodic_refinement(
     num_subsets,
     relaxation,
     max_relative_update,
-    sieve_sigma_cm,
     device,
 ):
     """Run local BSREM updates only on support voxels and return activity snapshots."""
@@ -594,14 +532,6 @@ def run_periodic_refinement(
                 max=max_relative_update,
             )
             support_activity = torch.clamp(support_activity * (1.0 + relative_update), min=EPS)
-            support_activity = apply_sieve_filter(
-                activity=support_activity,
-                candidate_flat_indices=support_candidate_grid["candidate_flat_indices"],
-                grid_shape=support_candidate_grid["grid_shape"],
-                voxel_size_cm=support_candidate_grid["voxel_size_cm"],
-                sieve_sigma_cm=sieve_sigma_cm,
-                device=device,
-            )
         if (
             refinement_update_index == 1
             or refinement_update_index % refinement_history_interval == 0
@@ -635,7 +565,6 @@ def online_bsrem_reconstruction(
     updates_per_batch=1,
     history_interval=1,
     reconstruction_priors=None,
-    reconstruction_sieve_sigma_cm=0.0,
     num_subsets=8,
     relaxation_initial=1.0,
     relaxation_decay=0.01,
@@ -649,10 +578,10 @@ def online_bsrem_reconstruction(
     refinement_history_interval=1,
     refinement_threshold_fraction=0.1,
     refinement_min_component_voxels=3,
+    refinement_min_total_activity_fraction=0.0,
     refinement_padding_cm=0.75,
     refinement_outside_support_decay=0.5,
     refinement_priors=None,
-    refinement_sieve_sigma_cm=0.0,
 ):
     """
     Reconstruct a voxel activity map with online BSREM.
@@ -692,6 +621,7 @@ def online_bsrem_reconstruction(
     refinement_history_interval = int(refinement_history_interval)
     refinement_threshold_fraction = float(refinement_threshold_fraction)
     refinement_min_component_voxels = int(refinement_min_component_voxels)
+    refinement_min_total_activity_fraction = float(refinement_min_total_activity_fraction)
     refinement_padding_cm = float(refinement_padding_cm)
     refinement_outside_support_decay = float(refinement_outside_support_decay)
     if enable_periodic_refinement:
@@ -705,6 +635,10 @@ def online_bsrem_reconstruction(
             raise ValueError("refinement_threshold_fraction must be between 0 and 1.")
         if refinement_min_component_voxels <= 0:
             raise ValueError("refinement_min_component_voxels must be > 0.")
+        if not 0.0 <= refinement_min_total_activity_fraction <= 1.0:
+            raise ValueError(
+                "refinement_min_total_activity_fraction must be between 0 and 1."
+            )
         if refinement_padding_cm < 0.0:
             raise ValueError("refinement_padding_cm must be >= 0.")
         if not 0.0 <= refinement_outside_support_decay <= 1.0:
@@ -727,8 +661,6 @@ def online_bsrem_reconstruction(
 
     reconstruction_priors = list(reconstruction_priors or [])
     refinement_priors = list(refinement_priors if refinement_priors is not None else reconstruction_priors)
-    sieve_sigma_cm = float(reconstruction_sieve_sigma_cm)
-    refinement_sieve_sigma_cm = float(refinement_sieve_sigma_cm)
 
     known_system_matrices = []
     known_counts = []
@@ -855,14 +787,6 @@ def online_bsrem_reconstruction(
                     )
                     activity = activity * (1.0 + relative_update)
                     activity = torch.clamp(activity, min=EPS)
-                    activity = apply_sieve_filter(
-                        activity=activity,
-                        candidate_flat_indices=candidate_grid["candidate_flat_indices"],
-                        grid_shape=candidate_grid["grid_shape"],
-                        voxel_size_cm=candidate_grid["voxel_size_cm"],
-                        sieve_sigma_cm=sieve_sigma_cm,
-                        device=device,
-                    )
 
                 if online_update_index == 1 or online_update_index % history_interval == 0:
                     history.append(
@@ -892,6 +816,7 @@ def online_bsrem_reconstruction(
                     candidate_positions=candidate_positions,
                     threshold_fraction=refinement_threshold_fraction,
                     min_component_voxels=refinement_min_component_voxels,
+                    min_total_activity_fraction=refinement_min_total_activity_fraction,
                     padding_cm=refinement_padding_cm,
                     candidate_flat_indices=candidate_grid["candidate_flat_indices"],
                     grid_shape=candidate_grid["grid_shape"],
@@ -918,7 +843,6 @@ def online_bsrem_reconstruction(
                         num_subsets=num_subsets,
                         relaxation=refinement_relaxation,
                         max_relative_update=max_relative_update,
-                        sieve_sigma_cm=refinement_sieve_sigma_cm,
                         device=device,
                     )
                     support_index_tensor = torch.as_tensor(support_indices, dtype=torch.long, device=device)
@@ -951,6 +875,9 @@ def online_bsrem_reconstruction(
                             "outside_support_decay": float(refinement_outside_support_decay),
                             "threshold_fraction": float(refinement_threshold_fraction),
                             "min_component_voxels": int(refinement_min_component_voxels),
+                            "min_total_activity_fraction": float(
+                                refinement_min_total_activity_fraction
+                            ),
                             "padding_cm": float(refinement_padding_cm),
                         }
                     )
@@ -1008,6 +935,9 @@ def online_bsrem_reconstruction(
             "periodic_refinement_enabled": bool(enable_periodic_refinement),
             "periodic_refinement_count": int(refinement_count),
             "periodic_refinement_history_interval": int(refinement_history_interval),
+            "periodic_refinement_min_total_activity_fraction": float(
+                refinement_min_total_activity_fraction
+            ),
         },
         "refinement_events": refinement_events,
         "timings": {

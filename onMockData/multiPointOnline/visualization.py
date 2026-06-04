@@ -158,6 +158,7 @@ def visualize_multi_source_scene(dataset, save_path=None, show=False, axis_limit
         marker="*",
         edgecolor="black",
         linewidth=0.8,
+        alpha=0.16,
         depthshade=False,
         label="true sources",
     )
@@ -274,7 +275,7 @@ def visualize_true_voxel_activity(
             c=np.log1p(voxel_activity),
             s=voxel_sizes,
             cmap="viridis",
-            alpha=0.42,
+            alpha=0.16 if "true" in str(label).lower() else 0.42,
             depthshade=False,
             label="true voxel activity",
         )
@@ -379,7 +380,7 @@ def visualize_activity_map_comparison(
                 c=np.log1p(voxel_activity),
                 s=voxel_sizes,
                 cmap=cmap,
-                alpha=0.42,
+                alpha=0.16 if "true" in str(label).lower() else 0.42,
                 depthshade=False,
                 label=label,
             )
@@ -517,7 +518,7 @@ def plot_thresholded_activity_panel(
             color="tab:green",
             s=34,
             marker="o",
-            alpha=0.55,
+            alpha=0.03,
             depthshade=False,
             label="true source voxels",
         )
@@ -573,6 +574,7 @@ def visualize_component_filtered_thresholded_activity(
     grid_shape,
     threshold_fraction,
     min_component_voxels,
+    min_total_activity_fraction=0.0,
     save_path=None,
     show=False,
     axis_limits=None,
@@ -593,6 +595,7 @@ def visualize_component_filtered_thresholded_activity(
         grid_shape=grid_shape,
         threshold_fraction=threshold_fraction,
         min_component_voxels=min_component_voxels,
+        min_total_activity_fraction=min_total_activity_fraction,
         axis_limits=axis_limits,
         frame_label=frame_label,
     )
@@ -606,6 +609,7 @@ def component_filtered_activity_mask(
     grid_shape,
     threshold_fraction,
     min_component_voxels,
+    min_total_activity_fraction,
 ):
     """Return a mask for thresholded reconstructed voxels in accepted components."""
     from metrics import find_activity_components
@@ -619,6 +623,7 @@ def component_filtered_activity_mask(
         grid_shape=grid_shape,
         threshold_fraction=threshold_fraction,
         min_component_voxels=min_component_voxels,
+        min_total_activity_fraction=min_total_activity_fraction,
     )
     for component in components:
         accepted_mask[np.asarray(component["indices"], dtype=np.int64)] = True
@@ -635,6 +640,7 @@ def plot_component_filtered_thresholded_activity_from_params(
     grid_shape,
     threshold_fraction,
     min_component_voxels,
+    min_total_activity_fraction,
     axis_limits=None,
     title="Thresholded voxels in accepted components",
     frame_label=None,
@@ -649,6 +655,7 @@ def plot_component_filtered_thresholded_activity_from_params(
         grid_shape=grid_shape,
         threshold_fraction=threshold_fraction,
         min_component_voxels=min_component_voxels,
+        min_total_activity_fraction=min_total_activity_fraction,
     )
     plot_thresholded_activity_panel(
         ax=ax,
@@ -661,6 +668,7 @@ def plot_component_filtered_thresholded_activity_from_params(
         title=(
             f"{title}\n"
             f"min component voxels {int(min_component_voxels)}"
+            f"\nmin component activity {100.0 * float(min_total_activity_fraction):.1f}% of strongest"
             + (f"\n{frame_label}" if frame_label else "")
         ),
         reconstructed_color_limits=reconstructed_color_limits,
@@ -695,6 +703,8 @@ def plot_component_filtered_thresholded_activity_panel(
         title=(
             f"{title}\n"
             f"min component voxels {int(component_matching['min_component_voxels'])}"
+            f"\nmin component activity "
+            f"{100.0 * float(component_matching.get('min_total_activity_fraction', 0.0)):.1f}% of strongest"
         ),
         reconstructed_mask_override=accepted_mask,
     )
@@ -791,7 +801,7 @@ def plot_refinement_support_panel(
             color="tab:green",
             s=34,
             marker="o",
-            alpha=0.55,
+            alpha=0.03,
             depthshade=False,
             label="true source voxels",
         )
@@ -864,6 +874,7 @@ def render_online_refinement_diagnostic_frames(
     online_history,
     threshold_fraction,
     min_component_voxels,
+    min_total_activity_fraction,
     frames_dir,
     refinement_events=None,
     axis_limits=None,
@@ -964,6 +975,7 @@ def render_online_refinement_diagnostic_frames(
                 grid_shape=grid_shape,
                 threshold_fraction=threshold_fraction,
                 min_component_voxels=min_component_voxels,
+                min_total_activity_fraction=min_total_activity_fraction,
                 axis_limits=axis_limits,
                 title="Online reconstruction accepted components",
                 frame_label=frame_label,
@@ -1179,7 +1191,7 @@ def plot_component_matching_panel(
             voxel_size_cm=voxel_size_cm,
             color="tab:green",
             linewidth=2.2,
-            alpha=0.85,
+            alpha=0.06,
             label="true blob envelope" if component_index == 0 else None,
         )
         points_for_scale.append(corners)
@@ -1191,6 +1203,7 @@ def plot_component_matching_panel(
             color="tab:green",
             s=35,
             marker="o",
+            alpha=0.03,
             depthshade=False,
         )
         ax.text(center[0], center[1], center[2], f"T{component['label']}", fontsize=9)
@@ -1569,6 +1582,18 @@ def visualize_system_matrix_sensitivity_3d(
     rotations = dataset.get("rotations")
     forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
     true_source_positions = np.array([source["position"] for source in dataset["true_sources"]], dtype=float)
+    true_source_strengths = np.asarray(
+        [
+            source.get("strength", source.get("strength_per_second", 0.0))
+            for source in dataset["true_sources"]
+        ],
+        dtype=float,
+    )
+    true_source_sizes = 80.0 + 180.0 * np.clip(
+        true_source_strengths / max(float(np.max(true_source_strengths)), EPS),
+        0.0,
+        1.0,
+    )
 
     fig = plt.figure(figsize=(8, 7))
     ax = fig.add_subplot(111, projection="3d")
@@ -1587,7 +1612,7 @@ def visualize_system_matrix_sensitivity_3d(
             c=np.log10(np.maximum(voxel_sensitivity, EPS)),
             s=8.0 + 48.0 * normalized,
             cmap="plasma",
-            alpha=0.32,
+            alpha=0.16,
             depthshade=False,
             label="H voxel sensitivity",
         )
@@ -1624,8 +1649,10 @@ def visualize_system_matrix_sensitivity_3d(
         true_source_positions[:, 1],
         true_source_positions[:, 2],
         marker="*",
-        s=130,
+        s=true_source_sizes,
         color="black",
+        alpha=0.16,
+        depthshade=False,
         label="true sources",
     )
 
@@ -1681,6 +1708,18 @@ def render_system_matrix_measurement_3d_frames(
     rotations = dataset.get("rotations")
     forward_local = dataset.get("geometry", {}).get("detector_forward_local", np.array([0.0, 0.0, 1.0]))
     true_source_positions = np.array([source["position"] for source in dataset["true_sources"]], dtype=float)
+    true_source_strengths = np.asarray(
+        [
+            source.get("strength", source.get("strength_per_second", 0.0))
+            for source in dataset["true_sources"]
+        ],
+        dtype=float,
+    )
+    true_source_sizes = 80.0 + 180.0 * np.clip(
+        true_source_strengths / max(float(np.max(true_source_strengths)), EPS),
+        0.0,
+        1.0,
+    )
     frame_paths = []
 
     for measurement_index in range(int(num_measurements)):
@@ -1703,7 +1742,7 @@ def render_system_matrix_measurement_3d_frames(
             c=np.log10(np.maximum(voxel_sensitivity, EPS)),
             s=8.0 + 48.0 * normalized,
             cmap="plasma",
-            alpha=0.32,
+            alpha=0.16,
             depthshade=False,
             vmin=color_min,
             vmax=color_max,
@@ -1745,8 +1784,10 @@ def render_system_matrix_measurement_3d_frames(
             true_source_positions[:, 1],
             true_source_positions[:, 2],
             marker="*",
-            s=130,
+            s=true_source_sizes,
             color="black",
+            alpha=0.16,
+            depthshade=False,
             label="true sources",
         )
 

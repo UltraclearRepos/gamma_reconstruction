@@ -95,12 +95,15 @@ def find_activity_components(
     grid_shape,
     threshold_fraction,
     min_component_voxels=1,
+    min_total_activity_fraction=0.0,
 ):
     """
     Split high-activity voxels into connected 3D blobs.
 
     Voxels are active when they are above threshold_fraction * max(activity).
     Active voxels that touch by face, edge, or corner are treated as one blob.
+    If min_total_activity_fraction is positive, blobs below that fraction of
+    the strongest blob's total activity are discarded.
     """
     activity = np.maximum(np.asarray(activity, dtype=float), 0.0)
     candidate_positions = np.asarray(candidate_positions, dtype=float)
@@ -117,6 +120,9 @@ def find_activity_components(
     threshold_fraction = float(threshold_fraction)
     if not 0.0 <= threshold_fraction <= 1.0:
         raise ValueError("threshold_fraction must be between 0 and 1.")
+    min_total_activity_fraction = float(min_total_activity_fraction)
+    if not 0.0 <= min_total_activity_fraction <= 1.0:
+        raise ValueError("min_total_activity_fraction must be between 0 and 1.")
 
     threshold = threshold_fraction * float(np.max(activity))
     active_candidate_indices = np.flatnonzero(activity >= threshold)
@@ -197,6 +203,14 @@ def find_activity_components(
         )
 
     components.sort(key=lambda component: component["total_activity"], reverse=True)
+    if components and min_total_activity_fraction > 0.0:
+        strongest_total_activity = float(components[0]["total_activity"])
+        min_total_activity = min_total_activity_fraction * strongest_total_activity
+        components = [
+            component
+            for component in components
+            if float(component["total_activity"]) >= min_total_activity
+        ]
     for label, component in enumerate(components, start=1):
         component["label"] = label
     return components
@@ -314,6 +328,7 @@ def summarize_activity_component_matching(
     true_sources=None,
     threshold_fraction=0.5,
     min_component_voxels=1,
+    min_total_activity_fraction=0.0,
 ):
     """
     Compare reconstructed activity blobs with true activity blobs.
@@ -344,6 +359,7 @@ def summarize_activity_component_matching(
         grid_shape=grid_shape,
         threshold_fraction=threshold_fraction,
         min_component_voxels=min_component_voxels,
+        min_total_activity_fraction=min_total_activity_fraction,
     )
 
     candidate_pairs = []
@@ -420,6 +436,7 @@ def summarize_activity_component_matching(
     return {
         "threshold_fraction": float(threshold_fraction),
         "min_component_voxels": int(min_component_voxels),
+        "min_total_activity_fraction": float(min_total_activity_fraction),
         "true_uses_full_source_blobs": true_sources is not None,
         "true_components": true_components,
         "reconstructed_components": reconstructed_components,
@@ -453,9 +470,10 @@ def print_activity_component_matching_summary(summary):
     print()
     print("Activity component matching metrics:")
     print(
-        " recon threshold/min voxels:"
+        " recon threshold/min voxels/min blob:"
         f"{100.0 * summary['threshold_fraction']:.1f}% of each max / "
-        f"{summary['min_component_voxels']}"
+        f"{summary['min_component_voxels']} / "
+        f"{100.0 * summary.get('min_total_activity_fraction', 0.0):.1f}% of strongest"
     )
     if summary.get("true_uses_full_source_blobs", False):
         print(" true blobs:               full generated source blobs, no threshold")

@@ -55,11 +55,11 @@ def make_default_config():
         # Mock data generation.
         "SEED": 11,  # Random seed for mock data noise, channel scales, backgrounds, and trajectory jitter.
         "NUM_MEASUREMENTS": 100,  # Number of detector positions / generated measurements.
-        # "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
-        #     {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
-        #     {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
-        #     # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
-        # ],
+        "TRUE_SOURCE_SPECS": [  # Ground-truth source centers [cm], source strengths [/s], and Gaussian spread [cm].
+            {"position": (-6.5, 2.6, -0.8), "strength_per_second": 6000.0, "spread_cm": 1.8},  # lateral, moderately shallow node.
+            {"position": (4.2, -1.2, 1.3), "strength_per_second": 7000.0, "spread_cm": 1.2},  # deeper central node.
+            # {"position": (1.5, -5.2, 0.7), "strength_per_second": 6100.0, "spread_cm": 0.7},  # cranial/lateral shallow node.
+        ],
         # "TRUE_SOURCE_SPECS": [
         #     # Lewy płat: głębiej, rozmyty
         #     {"position": (-2.5, 1.5, -1.0), "strength_per_second": 5000.0, "spread_cm": 1.2},
@@ -68,14 +68,14 @@ def make_default_config():
         #     # "Gorący guzek": bardzo blisko skóry (płytko), mały, wysoka aktywność
         #     {"position": (1.5, 5.0, -0.5), "strength_per_second": 8000.0, "spread_cm": 0.5},
         # ],
-        "TRUE_SOURCE_SPECS": [
-            # Główne źródło ukryte głęboko w tkance
-            {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
-            # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
-            {"position": (0.0, 6.0, 0.0), "strength_per_second": 5000.0, "spread_cm": 0.5},
-            # Punkt referencyjny z boku dla oceny ogólnej geometrii
-            {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
-        ],
+        # "TRUE_SOURCE_SPECS": [
+        #     # Główne źródło ukryte głęboko w tkance
+        #     {"position": (0.0, -2.0, 0.0), "strength_per_second": 12000.0, "spread_cm": 1.0},
+        #     # Słabe źródło leżące bezpośrednio nad tym głębokim, blisko detektora
+        #     {"position": (0.0, 6.0, 0.0), "strength_per_second": 5000.0, "spread_cm": 0.5},
+        #     # Punkt referencyjny z boku dla oceny ogólnej geometrii
+        #     {"position": (-4.0, 2.0, 2.0), "strength_per_second": 6000.0, "spread_cm": 0.8},
+        # ],
         # "TRUE_SOURCE_SPECS": [
         #     # Masywne, rozmyte źródło centralne
         #     {"position": (-1.0, 0.0, 0.0), "strength_per_second": 20000.0, "spread_cm": 2.0},
@@ -145,10 +145,9 @@ def make_default_config():
         "ONLINE_UPDATES_PER_BATCH": 50,  # BSREM passes over all received measurements after each incoming batch.
         "ONLINE_HISTORY_INTERVAL": 50,  # Store one history snapshot every N online updates.
         "RECONSTRUCTION_PRIORS": [
-            {"type": "tv", "beta": 0.01, "epsilon": 0.001},  # Smoothed total variation; encourages compact blobs with sharper boundaries than Gaussian sieve.
-            {"type": "l1", "beta": 0.01},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
+            {"type": "tv", "beta": 0.001, "epsilon": 0.001},  # Smoothed total variation; encourages compact blobs with sharper boundaries.
+            {"type": "l1", "beta": 0.001},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
         ],  # Priors used by online BSREM
-        "RECONSTRUCTION_SIEVE_SIGMA_CM": 0.0,  # Optional post-update Gaussian sieve filter; 0 disables it.
         "BSREM_NUM_SUBSETS": 8,  # Ordered subsets over measurements received so far.
         "BSREM_RELAXATION_INITIAL": 1.0,  # Initial BSREM relaxation step.
         "BSREM_RELAXATION_DECAY": 0.01,  # Larger values damp later online BSREM updates more strongly.
@@ -161,13 +160,13 @@ def make_default_config():
         "THRESHOLD_REFINEMENT_NUM_ITERATIONS": 10,
         "THRESHOLD_REFINEMENT_HISTORY_INTERVAL": 10,
         "THRESHOLD_REFINEMENT_PRIORS": [],
-        "THRESHOLD_REFINEMENT_SIEVE_SIGMA_CM": 0.0,
         "THRESHOLD_REFINEMENT_PADDING_CM": 0.75,
-        "THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY": 0.5,  # Multiply voxels outside support by this after each refinement.
+        "THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY": 0.0,  # Multiply voxels outside support by this after each refinement.
 
         # Activity-map metrics.
         "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.1,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
         "ACTIVITY_COMPONENT_MIN_VOXELS": 3,  # Minimum connected voxels needed to report a blob.
+        "ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION": 0.05,  # Minimum blob total activity as fraction of the strongest reconstructed blob.
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": False,  # Print full generated measurement x channel table.
@@ -383,7 +382,6 @@ def run_online_experiment(overrides=None):
         updates_per_batch=config["ONLINE_UPDATES_PER_BATCH"],
         history_interval=config["ONLINE_HISTORY_INTERVAL"],
         reconstruction_priors=config["RECONSTRUCTION_PRIORS"],
-        reconstruction_sieve_sigma_cm=config["RECONSTRUCTION_SIEVE_SIGMA_CM"],
         num_subsets=config["BSREM_NUM_SUBSETS"],
         relaxation_initial=config["BSREM_RELAXATION_INITIAL"],
         relaxation_decay=config["BSREM_RELAXATION_DECAY"],
@@ -394,6 +392,9 @@ def run_online_experiment(overrides=None):
         refinement_history_interval=config["THRESHOLD_REFINEMENT_HISTORY_INTERVAL"],
         refinement_threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         refinement_min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+        refinement_min_total_activity_fraction=config[
+            "ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION"
+        ],
         refinement_padding_cm=config["THRESHOLD_REFINEMENT_PADDING_CM"],
         refinement_outside_support_decay=config["THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY"],
         refinement_priors=(
@@ -401,7 +402,6 @@ def run_online_experiment(overrides=None):
             if not config["THRESHOLD_REFINEMENT_PRIORS"]
             else config["THRESHOLD_REFINEMENT_PRIORS"]
         ),
-        refinement_sieve_sigma_cm=config["THRESHOLD_REFINEMENT_SIEVE_SIGMA_CM"],
     )
     reconstruction_elapsed_seconds = perf_counter() - reconstruction_start_time
 
@@ -422,6 +422,7 @@ def run_online_experiment(overrides=None):
         true_sources=dataset["true_sources"],
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+        min_total_activity_fraction=config["ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION"],
     )
 
     return {
@@ -475,6 +476,7 @@ def main():
             f"every {config['THRESHOLD_REFINEMENT_INTERVAL_BATCHES']} batches, "
             f"updates/run={config['THRESHOLD_REFINEMENT_NUM_ITERATIONS']}, "
             f"history every {config['THRESHOLD_REFINEMENT_HISTORY_INTERVAL']}, "
+            f"min_blob_activity={config['ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION']:.3g}, "
             f"outside_decay={config['THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY']:.3g}"
         )
 
@@ -660,6 +662,7 @@ def main():
         online_history=result["history"],
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         min_component_voxels=1,
+        min_total_activity_fraction=config["ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION"],
         frames_dir=thresholded_history_dir,
         refinement_events=result.get("refinement_events", []),
         axis_limits=config["AXIS_LIMITS_3D"],
@@ -682,6 +685,7 @@ def main():
         online_history=result["history"],
         threshold_fraction=config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"],
         min_component_voxels=config["ACTIVITY_COMPONENT_MIN_VOXELS"],
+        min_total_activity_fraction=config["ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION"],
         frames_dir=accepted_components_history_dir,
         refinement_events=result.get("refinement_events", []),
         axis_limits=config["AXIS_LIMITS_3D"],
