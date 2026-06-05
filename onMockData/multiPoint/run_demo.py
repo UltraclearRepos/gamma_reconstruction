@@ -524,6 +524,8 @@ def main():
             tv_epsilon = prior.get("epsilon", 0.0)
         elif prior.get("type") == "l1":
             l1_beta = prior.get("beta", 0.0)
+    threshold_fraction = config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"]
+    outside_support_decay = config.get("THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY", 0.0)
             
     output_dir = (
         ON_MOCK_DATA_DIR 
@@ -532,6 +534,8 @@ def main():
         / f"variant_{variant_id}" 
         / f"tv_{tv_beta}_{tv_epsilon}" 
         / f"l1_{l1_beta}"
+        / f"threshold_fraction_{threshold_fraction}"
+        / f"outside_support_decay_{outside_support_decay}"
     )
     forward_model_dir = output_dir / "forward_model"
     history_3d_dir = output_dir / "mlem_activity_history_3d"

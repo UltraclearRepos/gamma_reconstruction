@@ -145,7 +145,7 @@ def make_default_config():
         "ONLINE_UPDATES_PER_BATCH": 50,  # BSREM passes over all received measurements after each incoming batch.
         "ONLINE_HISTORY_INTERVAL": 50,  # Store one history snapshot every N online updates.
         "RECONSTRUCTION_PRIORS": [
-            {"type": "tv", "beta": 0.01, "epsilon": 0.01},  # Smoothed total variation; encourages compact blobs with sharper boundaries.
+            {"type": "tv", "beta": 0.01, "epsilon": 0.001},  # Smoothed total variation; encourages compact blobs with sharper boundaries.
             {"type": "l1", "beta": 0.01},  # Adds sparsity pressure; discourages diffuse low activity spread across many voxels.
         ],  # Priors used by online BSREM
         "BSREM_NUM_SUBSETS": 8,  # Ordered subsets over measurements received so far.
@@ -161,7 +161,7 @@ def make_default_config():
         "THRESHOLD_REFINEMENT_HISTORY_INTERVAL": 10,
         "THRESHOLD_REFINEMENT_PRIORS": [],
         "THRESHOLD_REFINEMENT_PADDING_CM": 0.75,
-        "THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY": 0.0,  # Multiply voxels outside support by this after each refinement.
+        "THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY": 1.0,  # Multiply voxels outside support by this after each refinement.
 
         # Activity-map metrics.
         "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.1,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
@@ -503,14 +503,19 @@ def main():
             tv_epsilon = prior.get("epsilon", 0.0)
         elif prior.get("type") == "l1":
             l1_beta = prior.get("beta", 0.0)
+    threshold_fraction = config["ACTIVITY_COMPONENT_THRESHOLD_FRACTION"]
+    outside_support_decay = config["THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY"]
             
     output_dir = (
         ON_MOCK_DATA_DIR 
         / "multiPointOnline" 
         / "visualizations" 
         / f"variant_{variant_id}" 
+        / f"outside_support_decay_{outside_support_decay}"
+        / f"threshold_fraction_{threshold_fraction}"
         / f"tv_{tv_beta}_{tv_epsilon}" 
         / f"l1_{l1_beta}"
+
     )
     forward_model_dir = output_dir / "forward_model"
     thresholded_history_dir = output_dir / "online_thresholded_activity_history_3d"

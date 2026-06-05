@@ -32,3 +32,5 @@ reconstruction]. But then we still to simulate attenuation provided by skin/orga
 11. Conbining gaussian sieve with l1 can be good idea. Sieve makes detected radiation grow in bigger areas, l1 make it smaller. Combination could make perfect one. Why? Only l1 has tendency to detect only 1 of 3 sources, Sieves has tendency to make all voxels active. Makes sense to combine this.
 
 12. TV + L1 priors are promising, even combined
+
+13. Best priors: TV-beta=0.01, epsilon=0.001, L1=0.01
