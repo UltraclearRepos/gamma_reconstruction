@@ -279,12 +279,26 @@ def visualize_true_voxel_activity(
             active_indices = active_indices[np.argsort(true_activity[active_indices])[-max_voxels:]]
 
         voxel_positions = candidate_positions[active_indices]
-        plot_true_source_voxels(
-            ax=ax,
-            true_sources=dataset["true_sources"],
-            voxel_size_cm=voxel_size_cm,
-            alpha=1.0,
+        voxel_activity = true_activity[active_indices]
+        normalized_activity = np.clip(
+            voxel_activity / max(float(np.max(voxel_activity)), EPS),
+            0.0,
+            1.0,
         )
+        voxel_sizes = 10.0 + 65.0 * normalized_activity
+        scatter = ax.scatter(
+            voxel_positions[:, 0],
+            voxel_positions[:, 1],
+            voxel_positions[:, 2],
+            c=np.log1p(voxel_activity),
+            s=voxel_sizes,
+            cmap="viridis",
+            alpha=0.72,
+            depthshade=False,
+            label="true active voxels",
+        )
+        colorbar = fig.colorbar(scatter, ax=ax, shrink=0.75)
+        colorbar.set_label("log(1 + true activity)")
         points_for_scale.append(voxel_positions)
 
     ax.plot(

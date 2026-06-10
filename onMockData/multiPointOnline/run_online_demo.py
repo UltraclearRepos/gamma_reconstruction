@@ -161,7 +161,7 @@ def make_default_config():
         "THRESHOLD_REFINEMENT_HISTORY_INTERVAL": 10,
         "THRESHOLD_REFINEMENT_PRIORS": [],
         "THRESHOLD_REFINEMENT_PADDING_CM": 0.75,
-        "THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY": 1.0,  # Multiply voxels outside support by this after each refinement.
+        "THRESHOLD_REFINEMENT_OUTSIDE_SUPPORT_DECAY": 0.0,  # Multiply voxels outside support by this after each refinement.
 
         # Activity-map metrics.
         "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.1,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
@@ -515,6 +515,7 @@ def main():
         / f"threshold_fraction_{threshold_fraction}"
         / f"tv_{tv_beta}_{tv_epsilon}" 
         / f"l1_{l1_beta}"
+        / f'refinement_{True if config["ENABLE_THRESHOLD_REFINEMENT"] else False}'
 
     )
     forward_model_dir = output_dir / "forward_model"

@@ -157,7 +157,7 @@ def make_default_config():
         # Activity-map metrics.
         "ACTIVITY_COMPONENT_THRESHOLD_FRACTION": 0.1,  # Blob threshold as fraction of each map maximum; higher splits weak tails away.
         "ACTIVITY_COMPONENT_MIN_VOXELS": 3,  # Minimum connected voxels needed to report a blob.
-        "ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION": 0.1,  # Minimum blob total activity as fraction of the strongest reconstructed blob.
+        "ACTIVITY_COMPONENT_MIN_TOTAL_FRACTION": 0.05,  # Minimum blob total activity as fraction of the strongest reconstructed blob.
 
         # Visualization output.
         "PRINT_GENERATED_COUNTS_TABLE": True,  # Print full generated measurement x channel table.
